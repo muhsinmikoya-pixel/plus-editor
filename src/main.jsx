@@ -218,7 +218,7 @@ function App() {
           <div className="preview-placeholder"><Film size={36}/><b>Import a video to start</b><span>Your preview will appear here</span></div>}
         {showCaption && <div className="caption-overlay">{caption}</div>}
         {selectedFile && selectedFile.kind !== "audio" && <div className="canvas-hud">DRAG TO MOVE · ADJUST BELOW</div>}
-      </div>>
+      </div>
     </section>
     <div className="player-controls">
       <button aria-label="Fullscreen"><Crop size={20}/></button>
@@ -242,7 +242,7 @@ function App() {
        activeTool==="Audio" ? <div className="tool-detail"><label>Clip volume · {volume}%</label><input type="range" min="0" max="100" value={volume} onChange={event=>setVolume(+event.target.value)}/><button onClick={()=>chooseMedia("audio")}>Import audio</button></div> :
        activeTool==="Captions" ? <div className="tool-detail"><label>Captions</label><p>Automatic speech-to-text captions will be added in a later update.</p></div> :
        activeTool==="Effects" ? <div className="tool-detail"><label>Effects</label><p>Video effects and transitions are on the build roadmap.</p></div> :
-       <div className="tool-detail"><label>{status}</label><button onClick={splitClip}>Split at playhead</button><button onClick={addMore}>Add media</button></div>}
+       <div className="tool-detail transform-controls"><div className="transform-row"><label>Scale</label><input type="range" min="0.25" max="2.5" step="0.01" value={transform.scale} onChange={event=>updateTransform("scale",event.target.value)}/><b>{Math.round(transform.scale*100)}%</b></div><div className="transform-row"><label>Rotate</label><input type="range" min="-180" max="180" step="1" value={transform.rotation} onChange={event=>updateTransform("rotation",event.target.value)}/><b>{transform.rotation}°</b></div><div className="transform-actions"><button onClick={()=>updateTransform("scale",Math.min(2.5,transform.scale+0.1))}>＋ Zoom</button><button onClick={()=>updateTransform("rotation",transform.rotation+90)}>↻ Rotate 90°</button><button onClick={()=>setTransform({x:0,y:0,scale:1,rotation:0})}>Reset</button><button onClick={splitClip}>Split</button></div></div>}
       <nav className="editor-toolbar">{editorTools.map(([Icon,label])=><button key={label} className={activeTool===label?"active":""} onClick={()=>setActiveTool(label)}><Icon size={22}/><span>{label}</span></button>)}</nav>
     </section>
     <div className="editor-status">{status}</div>
