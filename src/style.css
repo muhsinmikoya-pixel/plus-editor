@@ -181,3 +181,9 @@
 .preview-canvas video,.preview-canvas img{transition:opacity .12s linear}
 .editor-toolbar button{min-width:58px}
 @media(max-height:740px){.timeline-area{height:225px}.timeline-scroll{height:160px}.clip-actions{height:28px}.caption-tools,.audio-tools,.transition-tools{max-height:115px;overflow:auto}}
+
+
+/* Touch-friendly playhead scrubber */
+.playhead-line{width:16px;margin-left:0;left:auto;background:transparent!important;pointer-events:auto;cursor:ew-resize;touch-action:none;z-index:12}
+.playhead-line i{left:3px;pointer-events:none}
+.playhead-line span{position:absolute;left:7px;top:0;bottom:0;width:2px;background:#f7f7f5;pointer-events:none}
