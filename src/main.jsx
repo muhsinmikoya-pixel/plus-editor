@@ -82,6 +82,7 @@ function App(){
     const c=clips.find(x=>x.id===id);if(!c)return;
     const d=Math.max(0.05,delta);
     if(edge==="left" && c.duration>d+0.05){updateClip(id,{sourceIn:c.sourceIn+d,duration:c.duration-d});setPlayhead(p=>Math.max(0,p-d));}
+    if(edge==="right" && c.sourceOut<=0){setStatus("Wait for the video preview to load before trimming its end.");return;}
     if(edge==="right" && c.duration>d+0.05){updateClip(id,{sourceOut:c.sourceOut-d,duration:c.duration-d});}
     setStatus("Trim updated. Original media remains unchanged.");
   }
@@ -163,7 +164,7 @@ function App(){
     <input ref={inputRef} hidden type="file" multiple onChange={e=>addImported(e.target.files)}/>
     <header className="editor-header"><button onClick={()=>setScreen("home")}><X/></button><button className="project-title" onClick={()=>{const n=window.prompt("Project name",projectName);if(n)setProjectName(n);}}>{projectName}<ChevronDown size={14}/></button><button className="editor-export" onClick={exportNotice}><Download size={15}/> Export</button></header>
     <section className="editor-preview"><div className="preview-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
-      {currentAsset?.kind==="video"?<video ref={videoRef} key={currentClip?.clip.id} src={currentAsset.url} playsInline muted={volume===0} onLoadedMetadata={e=>{const c=currentClip?.clip;if(c&&c.sourceOut===0){const d=e.target.duration||5;updateClip(c.id,{sourceOut:d,duration:d});}}} style={{objectFit:fit,transform:"translate(calc(-50% + "+transform.x+"px),calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}}/>:
+      {currentAsset?.kind==="video"?<video ref={videoRef} key={currentClip?.clip.id} src={currentAsset.url} playsInline muted={volume===0} onLoadedMetadata={e=>{const c=currentClip?.clip;if(c&&c.sourceOut<=0){const d=e.target.duration||5;updateClip(c.id,{sourceOut:d,duration:Math.max(.05,d-c.sourceIn)});}}} style={{objectFit:fit,transform:"translate(calc(-50% + "+transform.x+"px),calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}}/>:
       currentAsset?.kind==="image"?<img src={currentAsset.url} alt="" style={{objectFit:fit,transform:"translate(calc(-50% + "+transform.x+"px),calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}}/>:
       <div className="preview-placeholder"><Film/><b>{clips.length?"Select a video or photo clip":"Your preview will appear here"}</b><span>Import media to begin editing</span><button className="cyan-button" onClick={()=>chooseMedia("all")}>Import media</button></div>}
       {showCaption&&<div className="caption-overlay">{caption}</div>}
