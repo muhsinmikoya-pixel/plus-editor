@@ -237,3 +237,21 @@
 .clip-filmstrip .film-frame{position:relative!important;inset:auto!important;display:block;flex:1 1 0;width:0!important;min-width:0;height:100%!important;object-fit:cover;opacity:1!important;border-right:1px solid #1115}
 .timeline-clip .clip-visual{position:relative;overflow:hidden;border-radius:3px}
 .timeline-clip .clip-visual>b{z-index:2}
+
+
+/* Expanded creative libraries */
+.preset-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%;max-height:116px;overflow:auto;padding:2px}
+.preset-grid button{min-height:32px;padding:6px 4px;border:1px solid #42454c;border-radius:7px;background:#24262b;color:#e9eaed;font-size:9px;font-weight:700}
+.preset-grid button.active,.sticker-grid button.active{background:#f1f1ef;color:#111;border-color:#fff}
+.preset-grid button:disabled{opacity:.35}
+.transition-tools{max-height:170px;overflow:auto;align-content:flex-start}
+.transition-grid{grid-template-columns:repeat(4,minmax(0,1fr));max-height:125px}
+.sticker-tools{display:flex;flex-wrap:wrap;gap:8px;padding:10px;align-items:center;max-height:175px;overflow:auto}
+.sticker-tools>label{width:100%;font-size:10px;color:#d5d7dc;font-weight:700}
+.sticker-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;width:100%}
+.sticker-grid button{aspect-ratio:1;border:1px solid #3e4148;border-radius:8px;background:#25272c;color:white;font-size:22px;padding:2px}
+.sticker-tools input[type=range]{width:100%;accent-color:#f1f1ef}
+.sticker-tools small{width:100%;font-size:9px;color:#aeb2ba}
+.sticker-overlay{position:absolute;z-index:5;left:50%;transform:translate(-50%,-50%);line-height:1;filter:drop-shadow(0 3px 4px #0009);pointer-events:none}
+.sticker-top{top:17%}.sticker-center{top:50%}.sticker-bottom{top:78%}
+@media(max-width:430px){.sticker-tools{max-height:160px}.preset-grid button{font-size:8px}}
