@@ -187,7 +187,9 @@ function App(){
     if(d.mode==="trim-left"){
       const amount=clamp(delta,-d.base.sourceIn,d.base.duration-.08);
       const nextIn=d.base.sourceIn+amount;
-      updateClip(d.id,{sourceIn:nextIn,duration:d.base.duration-amount});
+      const patch={sourceIn:nextIn,duration:d.base.duration-amount};
+      if(d.base.kind==="audio")patch.startTime=Math.max(0,(d.base.startTime||0)+amount);
+      updateClip(d.id,patch);
     }else if(d.mode==="trim-right"){
       const amount=clamp(delta,-d.base.duration+.08,Math.max(0,(d.base.sourceOut||d.base.duration)-.05));
       updateClip(d.id,{sourceOut:d.base.sourceOut-amount,duration:d.base.duration-amount});
