@@ -375,7 +375,7 @@ function App(){
         audioElements.push({audio,clip:ac,source});
       }
       const drawFrame=(source,transformData,timelineTime=0,transitionType="none",transitionElapsed=timelineTime)=>{
-        ctx.fillStyle="#000";ctx.fillRect(0,0,outputWidth,outputHeight);ctx.filter="brightness("+brightness+"%) contrast("+contrast+"%) saturate("+saturation+"%) "+({none:"",vhs:"sepia(.35) contrast(1.18) saturate(.8)",mono:"grayscale(1)",cinema:"contrast(1.18) saturate(1.2) sepia(.12)",dream:"saturate(1.35) brightness(1.08)",cool:"hue-rotate(12deg) saturate(1.2)",warm:"sepia(.25) saturate(1.35)",negative:"invert(1)",fade:"contrast(.82) saturate(.7) brightness(1.12)",noir:"grayscale(1) contrast(1.55)",neon:"saturate(2) contrast(1.35)",soft:"brightness(1.08) saturate(.85)",vivid:"saturate(1.8) contrast(1.15)"}[effectPreset]||"");
+        ctx.fillStyle="#000";ctx.fillRect(0,0,outputWidth,outputHeight);ctx.filter="brightness("+brightness+"%) contrast("+contrast+"%) saturate("+saturation+"%) "+({none:"",vhs:"sepia(.35) contrast(1.18) saturate(.8)",mono:"grayscale(1)",cinema:"contrast(1.18) saturate(1.2) sepia(.12)",dream:"saturate(1.35) brightness(1.08)",cool:"hue-rotate(12deg) saturate(1.2)",warm:"sepia(.25) saturate(1.35)",negative:"invert(1)",fade:"contrast(.82) saturate(.7) brightness(1.12)",noir:"grayscale(1) contrast(1.55)",neon:"saturate(2) contrast(1.35)",soft:"brightness(1.08) saturate(.85)",vivid:"saturate(1.8) contrast(1.15)"}[effectPreset]||"");const baseFilter=ctx.filter;
         const w=source.videoWidth||source.naturalWidth||outputWidth,h=source.videoHeight||source.naturalHeight||outputHeight;
         const scale=Math.min(outputWidth/w,outputHeight/h)*(transformData?.scale||1);
         const dw=w*scale,dh=h*scale;
