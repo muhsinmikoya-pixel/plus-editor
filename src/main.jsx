@@ -34,12 +34,14 @@ function App(){
   useEffect(()=>()=>assets.forEach(a=>URL.revokeObjectURL(a.url)),[]);
   const selectedClip=clips.find(c=>c.id===selected)||clips[0]||null;
   const selectedAsset=selectedClip?assets.find(a=>a.id===selectedClip.assetId):null;
-  const totalDuration=clips.reduce((n,c)=>n+c.duration,0);
+  const videoClips=clips.filter(c=>c.kind!=="audio");
+  const audioClips=clips.filter(c=>c.kind==="audio");
+  const totalDuration=videoClips.reduce((n,c)=>n+c.duration,0);
   const currentClip=useMemo(()=>{
     let t=0;
-    for(const c of clips){ if(playhead>=t && playhead<t+c.duration) return {clip:c,offset:playhead-t,start:t}; t+=c.duration; }
-    return clips.length?{clip:clips[clips.length-1],offset:clips[clips.length-1].duration,start:Math.max(0,totalDuration-clips[clips.length-1].duration)}:null;
-  },[clips,playhead,totalDuration]);
+    for(const c of videoClips){ if(playhead>=t && playhead<t+c.duration) return {clip:c,offset:playhead-t,start:t}; t+=c.duration; }
+    return videoClips.length?{clip:videoClips[videoClips.length-1],offset:videoClips[videoClips.length-1].duration,start:Math.max(0,totalDuration-videoClips[videoClips.length-1].duration)}:null;
+  },[videoClips,playhead,totalDuration]);
   const currentAsset=currentClip?assets.find(a=>a.id===currentClip.clip.assetId):selectedAsset;
   const pxPerSec=zoom;
   const timelineWidth=Math.max(640,totalDuration*pxPerSec+240);
@@ -66,7 +68,8 @@ function App(){
   function updateClip(id,patch){setClips(old=>old.map(c=>c.id===id?{...c,...patch}:c));}
   function splitSelected(){
     if(!selectedClip){setStatus("Select a timeline clip first.");return;}
-    let start=0;for(const c of clips){if(c.id===selectedClip.id)break;start+=c.duration;}
+    if(selectedClip.kind==="audio"){setStatus("Audio splitting is not enabled in this build yet.");return;}
+    let start=0;for(const c of videoClips){if(c.id===selectedClip.id)break;start+=c.duration;}
     const local=playhead-start;
     const cutSource=selectedClip.sourceIn+local;
     if(local<=0.04||local>=selectedClip.duration-0.04){setStatus("Move the playhead inside the selected clip to split it.");return;}
@@ -130,12 +133,12 @@ function App(){
     if(Math.abs(videoRef.current.currentTime-target)>0.25){try{videoRef.current.currentTime=target;}catch{}}
     videoRef.current.volume=clamp(volume,0,100)/100;
     if(playing)videoRef.current.play().catch(()=>setPlaying(false));else videoRef.current.pause();
-  },[currentClip?.clip.id,currentClip?.offset,playing,currentAsset?.url,volume]);
+  },[currentClip?.clip.id,playing,currentAsset?.url,volume]);
+  useEffect(()=>{if(selectedClip?.transform)setTransform(selectedClip.transform);},[selectedClip?.id]);
   function exportNotice(){setStatus("Export rendering is not ready yet. The timeline edits are real, but this build does not yet render a combined MP4/WebM sequence.");}
   const homeTools=[[AudioLines,"Audio tools"],[Captions,"Captions"],[Image,"Photo tools"],[Mic,"Voiceover"],[Sparkles,"Effects"],[WandSparkles,"AI tools"]];
   const editorTools=[[Settings2,"Edit"],[Crop,"Crop"],[Music2,"Audio"],[Type,"Text"],[Layers,"Layers"],[Captions,"Captions"]];
-  const currentIndex=clips.findIndex(c=>c.id===selectedClip?.id);
-  const selectedStart=clips.slice(0,Math.max(0,currentIndex)).reduce((n,c)=>n+c.duration,0);
+  const currentIndex=videoClips.findIndex(c=>c.id===selectedClip?.id);
 
   if(screen==="home")return <div className="mobile-app home-screen">
     <input ref={inputRef} hidden type="file" multiple onChange={e=>addImported(e.target.files)}/>
@@ -172,11 +175,11 @@ function App(){
       <div className="timeline-scroll" ref={timelineRef} onPointerDown={onTimelinePointer}>
         <div className="timeline-ruler" style={{width:timelineWidth}}>{Array.from({length:Math.ceil(totalDuration)+2},(_,i)=><span key={i} style={{left:i*pxPerSec}}>{fmt(i)}</span>)}</div>
         <div className="track-label"><b>VIDEO</b><button onClick={()=>chooseMedia("video")}><Plus/></button></div>
-        <div className="track-lane" style={{width:timelineWidth}}>{clips.filter(c=>c.kind!=="audio").map(c=>{const i=clips.findIndex(x=>x.id===c.id);const left=clips.slice(0,i).reduce((n,x)=>n+x.duration,0);return <div key={c.id} draggable onDragStart={e=>onClipDragStart(e,c.id)} onDragOver={e=>e.preventDefault()} onDrop={e=>onClipDrop(e,c.id)} className={"timeline-clip "+(selected===c.id?"selected":"")} style={{left:left*pxPerSec,width:Math.max(38,c.duration*pxPerSec)}} onClick={e=>{e.stopPropagation();setSelected(c.id);seekTo(left);}}>
+        <div className="track-lane" style={{width:timelineWidth}}>{videoClips.map((c,i)=>{const left=videoClips.slice(0,i).reduce((n,x)=>n+x.duration,0);return <div key={c.id} draggable onDragStart={e=>onClipDragStart(e,c.id)} onDragOver={e=>e.preventDefault()} onDrop={e=>onClipDrop(e,c.id)} className={"timeline-clip "+(selected===c.id?"selected":"")} style={{left:left*pxPerSec,width:Math.max(38,c.duration*pxPerSec)}} onClick={e=>{e.stopPropagation();setSelected(c.id);seekTo(left);}}>
           <button className="trim-handle left" title="Trim start" onClick={e=>{e.stopPropagation();trimClip(c.id,"left",0.5);}}></button><div className="clip-visual"><span>{c.kind==="audio"?<AudioLines/>:<Film/>}</span><b>{c.name}</b></div><button className="trim-handle right" title="Trim end" onClick={e=>{e.stopPropagation();trimClip(c.id,"right",0.5);}}></button>
         </div>;})}</div>
         <div className="track-label"><b>AUDIO</b><button onClick={()=>chooseMedia("audio")}><Plus/></button></div>
-        <div className="track-lane audio-lane" style={{width:timelineWidth}}>{clips.filter(c=>c.kind==="audio").map(c=><div key={c.id} className={"timeline-clip audio-clip "+(selected===c.id?"selected":"")} style={{width:Math.max(90,c.duration*pxPerSec)}} onClick={e=>{e.stopPropagation();setSelected(c.id);}}><AudioLines/><b>{c.name}</b></div>)}<span className="lane-hint">Add a music track or voice recording</span></div>
+        <div className="track-lane audio-lane" style={{width:timelineWidth}}>{audioClips.map((c,i)=><div key={c.id} className={"timeline-clip audio-clip "+(selected===c.id?"selected":"")} style={{left:audioClips.slice(0,i).reduce((n,x)=>n+x.duration,0)*pxPerSec,width:Math.max(90,c.duration*pxPerSec)}} onClick={e=>{e.stopPropagation();setSelected(c.id);}}><AudioLines/><b>{c.name}</b></div>)}<span className="lane-hint">Add a music track or voice recording</span></div>
         <div className="track-label"><b>TEXT</b><button onClick={()=>{setShowCaption(true);setActiveTool("Text");}}><Plus/></button></div>
         <div className="track-lane text-lane" style={{width:timelineWidth}}>{showCaption?<div className="timeline-clip text-clip" style={{left:0,width:Math.max(100,totalDuration*pxPerSec)}} onClick={()=>setActiveTool("Text")}><Type/><b>{caption}</b></div>:<span className="lane-hint">Add titles and captions</span>}</div>
         <div className="playhead-line" style={{left:playhead*pxPerSec}}><i/></div>
