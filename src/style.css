@@ -224,3 +224,9 @@
 .editor-toolbar{overflow-x:auto;scrollbar-width:none}
 .editor-toolbar::-webkit-scrollbar{display:none}
 @media(max-width:430px){.preview-canvas{max-width:calc(100vw - 24px);max-height:31vh}.tool-drawer{min-height:150px}.caption-tools{max-height:155px;overflow-y:auto}}
+
+.color-tools{display:flex;flex-direction:column;align-items:stretch;gap:5px;max-height:150px;overflow:auto}
+.color-tools>label{font-size:10px;color:#d5d7dc}
+.color-tools input[type=range]{width:100%}
+.audio-library{max-height:115px;overflow:auto}
+.audio-library button{flex:0 0 auto}
