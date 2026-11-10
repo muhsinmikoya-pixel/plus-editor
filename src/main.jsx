@@ -318,8 +318,7 @@ function App(){
         }else{
           const video=document.createElement("video");video.src=asset.url;video.playsInline=true;video.preload="auto";video.volume=clamp(c.volume??100,0,100)/100;
           await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error("Could not load "+asset.name));});
-          video.currentTime=c.sourceIn;
-          await new Promise(resolve=>{video.onseeked=resolve;setTimeout(resolve,1500);});
+          await new Promise(resolve=>{video.onseeked=resolve;video.currentTime=c.sourceIn;if(c.sourceIn===0)setTimeout(resolve,100);setTimeout(resolve,2000);});
           const source=audioContext.createMediaElementSource(video);source.connect(audioOut);videoElements.push(video);
           await video.play();
           await new Promise(resolve=>{
@@ -332,11 +331,6 @@ function App(){
           });
         }
       }
-      audioElements.forEach(({audio,clip})=>{
-        const at=Math.max(0,clip.startTime||0);
-        const delay=Math.max(0,at);
-        setTimeout(()=>{try{audio.currentTime=clip.sourceIn||0;audio.play();setTimeout(()=>audio.pause(),clip.duration*1000);}catch{}},delay*1000);
-      });
       // Keep the recorder alive through any audio tail after the picture ends.
       const audioTail=Math.max(0,...audioClips.map(c=>(c.startTime||0)+c.duration))-mainDuration;
       if(audioTail>0)await new Promise(resolve=>setTimeout(resolve,audioTail*1000));
