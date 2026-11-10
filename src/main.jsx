@@ -30,6 +30,9 @@ function App() {
   const [playhead, setPlayhead] = useState(0);
   const [projectName, setProjectName] = useState("Untitled project");
   const [projectCount, setProjectCount] = useState(0);
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1, rotation: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef(null);
   const inputRef = useRef(null);
   const videoRef = useRef(null);
   const selectedFile = files.find(file => file.id === selected) || files[0] || null;
@@ -137,9 +140,11 @@ function App() {
     }
   }
 
-  function splitClip() {
-    setStatus("Split editing is being built next. Your original media is unchanged.");
-  }
+  function splitClip() { setStatus("Split point selected. Frame-accurate slicing is being built."); }
+  function updateTransform(key, value) { setTransform(old => ({ ...old, [key]: Number(value) })); }
+  function onCanvasDown(e) { if (!selectedFile || selectedFile.kind === "audio") return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const r=e.currentTarget.getBoundingClientRect(); dragRef.current={id:e.pointerId,x:e.clientX,y:e.clientY,bx:transform.x,by:transform.y,w:r.width,h:r.height}; setDragging(true); }
+  function onCanvasMove(e) { if(!dragRef.current || dragRef.current.id!==e.pointerId)return; setTransform(old=>({...old,x:Math.max(-180,Math.min(180,dragRef.current.bx+(e.clientX-dragRef.current.x)*360/dragRef.current.w)),y:Math.max(-110,Math.min(110,dragRef.current.by+(e.clientY-dragRef.current.y)*202.5/dragRef.current.h))})); }
+  function onCanvasUp(e) { if(dragRef.current && dragRef.current.id===e.pointerId){dragRef.current=null;setDragging(false);} }
 
   const homeTools = [
     [AudioLines, "AutoCut", "Create a quick edit"],
