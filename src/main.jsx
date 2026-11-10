@@ -212,12 +212,13 @@ function App() {
       <button className="editor-export" onClick={exportCurrent}><Download size={16}/> Export</button>
     </header>
     <section className="editor-preview">
-      <div className="preview-canvas">
-        {selectedFile?.kind === "video" ? <video ref={videoRef} key={selectedFile.id} src={selectedFile.url} controls={false} onLoadedMetadata={event => {setDuration(event.target.duration || 0);const file=files.find(item=>item.id===selectedFile.id);if(file)file.duration=event.target.duration || 0;}} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}/> :
-          selectedFile?.kind === "image" ? <img src={selectedFile.url} alt={selectedFile.name}/> :
+      <div className={"preview-canvas " + (dragging ? "is-dragging" : "")} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerCancel={onCanvasUp}>
+        {selectedFile?.kind === "video" ? <video className="transform-media" style={{transform:"translate(calc(-50% + "+transform.x+"px), calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}} ref={videoRef} key={selectedFile.id} src={selectedFile.url} controls={false} playsInline onLoadedMetadata={event => {setDuration(event.target.duration || 0);const file=files.find(item => item.id===selectedFile.id);if(file)file.duration=event.target.duration || 0;}} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}/> :
+          selectedFile?.kind === "image" ? <img className="transform-media" style={{transform:"translate(calc(-50% + "+transform.x+"px), calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}} src={selectedFile.url} alt={selectedFile.name}/> :
           <div className="preview-placeholder"><Film size={36}/><b>Import a video to start</b><span>Your preview will appear here</span></div>}
         {showCaption && <div className="caption-overlay">{caption}</div>}
-      </div>
+        {selectedFile && selectedFile.kind !== "audio" && <div className="canvas-hud">DRAG TO MOVE · ADJUST BELOW</div>}
+      </div>>
     </section>
     <div className="player-controls">
       <button aria-label="Fullscreen"><Crop size={20}/></button>
