@@ -187,3 +187,5 @@
 .playhead-line{width:16px;margin-left:0;left:auto;background:transparent!important;pointer-events:auto;cursor:ew-resize;touch-action:none;z-index:12}
 .playhead-line i{left:3px;pointer-events:none}
 .playhead-line span{position:absolute;left:7px;top:0;bottom:0;width:2px;background:#f7f7f5;pointer-events:none}
+
+.preview-canvas video,.preview-canvas img{transition:opacity .12s linear,transform .12s linear}
