@@ -224,7 +224,7 @@ function App(){
     if(!playing&&Math.abs(video.currentTime-target)>.12){try{video.currentTime=target;}catch{}}
     video.volume=clamp(selectedClip?.volume??volume,0,100)/100;
     if(playing&&video.paused)video.play().catch(()=>setPlaying(false));else if(!playing)video.pause();
-  },[currentClip?.clip.id,currentAsset?.url,playing,playhead]);
+  },[currentClip?.clip.id,currentAsset?.url,playing,playhead,selectedClip?.volume,volume]);
   useEffect(()=>{
     audioClips.forEach(c=>{
       const el=audioRefs.current[c.id];if(!el)return;
@@ -291,7 +291,7 @@ function App(){
         const w=source.videoWidth||source.naturalWidth||1280,h=source.videoHeight||source.naturalHeight||720;
         const scale=Math.min(1280/w,720/h)*(transformData?.scale||1);
         const dw=w*scale,dh=h*scale;
-        ctx.save();ctx.translate(640+(transformData?.x||0)*2,360+(transformData?.y||0)*2);ctx.rotate((transformData?.rotation||0)*Math.PI/180);
+        ctx.save();ctx.beginPath();ctx.rect(1280*crop.left/100,720*crop.top/100,1280*(100-crop.left-crop.right)/100,720*(100-crop.top-crop.bottom)/100);ctx.clip();ctx.translate(640+(transformData?.x||0)*2,360+(transformData?.y||0)*2);ctx.rotate((transformData?.rotation||0)*Math.PI/180);
         ctx.drawImage(source,-dw/2,-dh/2,dw,dh);ctx.restore();
         if(showCaption){ctx.font="bold 46px Arial";ctx.textAlign="center";ctx.lineWidth=5;ctx.strokeStyle="#000";ctx.fillStyle="#fff";ctx.strokeText(caption,640,650,1150);ctx.fillText(caption,640,650,1150);}
       };
