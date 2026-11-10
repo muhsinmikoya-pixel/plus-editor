@@ -31,6 +31,17 @@ function App(){
   const [captionStart,setCaptionStart]=useState(0);
   const [captionEnd,setCaptionEnd]=useState(9999);
   const [exporting,setExporting]=useState(false);
+  const [exportProgress,setExportProgress]=useState(0);
+  const [aspectRatio,setAspectRatio]=useState("16:9");
+  const [exportSize,setExportSize]=useState("1080");
+  const [exportFps,setExportFps]=useState("30");
+  const [captionStyle,setCaptionStyle]=useState("classic");
+  const [captionAnimation,setCaptionAnimation]=useState("pop");
+  const [captionShadow,setCaptionShadow]=useState(true);
+  const [voiceText,setVoiceText]=useState("");
+  const [voiceChoice,setVoiceChoice]=useState("pNInz6obpgDQGcFmaJgB");
+  const [voiceApiKey,setVoiceApiKey]=useState("");
+  const [voiceBusy,setVoiceBusy]=useState(false);
   const inputRef=useRef(null);
   const videoRef=useRef(null);
   const timelineRef=useRef(null);
@@ -54,6 +65,10 @@ function App(){
   },[mainClips,playhead,mainDuration]);
   const currentAsset=currentClip?assets.find(a=>a.id===currentClip.clip.assetId):selectedAsset;
   const pxPerSec=zoom;
+  const aspectMap={"16:9":[16,9],"9:16":[9,16],"1:1":[1,1],"4:5":[4,5],"4:3":[4,3],"21:9":[21,9]};
+  const [aspectW,aspectH]=aspectMap[aspectRatio]||[16,9];
+  const outputWidth=Number(exportSize);
+  const outputHeight=Math.round(outputWidth*aspectH/aspectW);
   const timelineWidth=Math.max(640,totalDuration*pxPerSec+180);
   const canUndo=historyRef.current.length>0;
   const canRedo=redoRef.current.length>0;
@@ -232,6 +247,17 @@ function App(){
     const next={...transform,[key]:Number(value)};setTransform(next);
     if(selectedClip)updateClip(selectedClip.id,{transform:next});
   }
+  function toggleFlip(axis){const next={...transform,[axis]:!transform[axis]};setTransform(next);if(selectedClip)updateClip(selectedClip.id,{transform:next});}
+  async function generateVoice(){
+    if(!voiceText.trim()){setStatus("Write a voice script first.");return;}
+    if(!voiceApiKey.trim()){setStatus("Add your ElevenLabs API key to generate a realistic AI voice.");return;}
+    setVoiceBusy(true);setStatus("Generating AI voice…");
+    try{const response=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+voiceChoice,{method:"POST",headers:{"xi-api-key":voiceApiKey,"Content-Type":"application/json","Accept":"audio/mpeg"},body:JSON.stringify({text:voiceText,model_id:"eleven_multilingual_v2",voice_settings:{stability:.48,similarity_boost:.78,style:.25,use_speaker_boost:true}})});
+      if(!response.ok)throw new Error("Voice service returned "+response.status+". Check your API key and available credits.");
+      const blob=await response.blob();const url=URL.createObjectURL(blob);const id=uid(),clipId=uid();const duration=await new Promise(resolve=>{const a=new Audio();a.src=url;a.onloadedmetadata=()=>resolve(Number.isFinite(a.duration)?a.duration:Math.max(2,voiceText.length/14));a.onerror=()=>resolve(Math.max(2,voiceText.length/14));});
+      const asset={id,name:"AI voiceover.mp3",url,kind:"audio",duration};const clip={id:clipId,assetId:id,name:"AI voiceover",kind:"audio",sourceIn:0,sourceOut:duration,duration,startTime:playhead,volume:100};setAssets(old=>[...old,asset]);setClips(old=>[...old,clip]);setSelected(clipId);setActiveTool("Audio");setStatus("AI voiceover generated and added to your timeline.");
+    }catch(e){setStatus("AI voice failed: "+e.message);}finally{setVoiceBusy(false);}
+  }
   function pointerDown(e){
     if(!currentAsset||currentAsset.kind==="audio"||e.target.closest(".canvas-controls"))return;
     e.currentTarget.setPointerCapture(e.pointerId);dragRef.current={mode:"canvas",pointerId:e.pointerId,x:e.clientX,y:e.clientY,tx:transform.x,ty:transform.y};
@@ -304,12 +330,12 @@ function App(){
     if(exporting)return;
     if(!mainClips.length){setStatus("Add a video or photo before exporting.");return;}
     if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){setStatus("This browser does not support in-browser video export. Try the latest Chrome.");return;}
-    setExporting(true);setStatus("Preparing your video export…");
+    setExporting(true);setExportProgress(0);setStatus("Preparing your video export…");
     let audioContext=null,recorder=null;
     try{
-      const canvas=document.createElement("canvas");canvas.width=1280;canvas.height=720;
+      const canvas=document.createElement("canvas");canvas.width=outputWidth;canvas.height=outputHeight;
       const ctx=canvas.getContext("2d");
-      const stream=canvas.captureStream(30);
+      const stream=canvas.captureStream(Number(exportFps));
       const mime=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4"].find(t=>MediaRecorder.isTypeSupported(t))||"";
       audioContext=new AudioContext();
       const audioOut=audioContext.createMediaStreamDestination();
@@ -326,12 +352,12 @@ function App(){
         audioElements.push({audio,clip:ac,source});
       }
       const drawFrame=(source,transformData,timelineTime=0,transitionType="none",transitionElapsed=timelineTime)=>{
-        ctx.fillStyle="#000";ctx.fillRect(0,0,1280,720);
-        const w=source.videoWidth||source.naturalWidth||1280,h=source.videoHeight||source.naturalHeight||720;
-        const scale=Math.min(1280/w,720/h)*(transformData?.scale||1);
+        ctx.fillStyle="#000";ctx.fillRect(0,0,outputWidth,outputHeight);
+        const w=source.videoWidth||source.naturalWidth||outputWidth,h=source.videoHeight||source.naturalHeight||outputHeight;
+        const scale=Math.min(outputWidth/w,outputHeight/h)*(transformData?.scale||1);
         const dw=w*scale,dh=h*scale;
-        const progress=clamp(transitionElapsed/.45,0,1);ctx.save();ctx.beginPath();ctx.rect(1280*crop.left/100,720*crop.top/100,1280*(100-crop.left-crop.right)/100,720*(100-crop.top-crop.bottom)/100);ctx.clip();ctx.globalAlpha=transitionType==="fade"?progress:1;const extraScale=transitionType==="zoom"?(1.12-.12*progress):1;const slide=transitionType==="slide"?(1-progress)*220:0;ctx.translate(640+(transformData?.x||0)*2+slide,360+(transformData?.y||0)*2);ctx.rotate((transformData?.rotation||0)*Math.PI/180);ctx.drawImage(source,-dw*extraScale/2,-dh*extraScale/2,dw*extraScale,dh*extraScale);ctx.restore();
-        if(showCaption&&timelineTime>=captionStart&&timelineTime<=captionEnd){ctx.font="bold "+fontSize+"px "+fontFamily;ctx.textAlign="center";ctx.lineWidth=5;ctx.strokeStyle="#000";ctx.fillStyle=captionColor;ctx.strokeText(caption,640,650,1150);ctx.fillText(caption,640,650,1150);}
+        const progress=clamp(transitionElapsed/.45,0,1);ctx.save();ctx.beginPath();ctx.rect(outputWidth*crop.left/100,outputHeight*crop.top/100,outputWidth*(100-crop.left-crop.right)/100,outputHeight*(100-crop.top-crop.bottom)/100);ctx.clip();ctx.globalAlpha=transitionType==="fade"?progress:1;const extraScale=transitionType==="zoom"?(1.12-.12*progress):1;const slide=transitionType==="slide"?(1-progress)*220:0;ctx.translate(outputWidth/2+(transformData?.x||0)*outputWidth/640+slide,outputHeight/2+(transformData?.y||0)*outputHeight/360);ctx.rotate((transformData?.rotation||0)*Math.PI/180);ctx.scale(transformData?.flipX?-1:1,transformData?.flipY?-1:1);ctx.drawImage(source,-dw*extraScale/2,-dh*extraScale/2,dw*extraScale,dh*extraScale);ctx.restore();
+        if(showCaption&&timelineTime>=captionStart&&timelineTime<=captionEnd){ctx.font="bold "+fontSize+"px "+fontFamily;ctx.textAlign="center";ctx.lineWidth=captionStyle==="clean"?0:captionStyle==="heavy"?8:4;ctx.strokeStyle=captionStyle==="neon"?"#00e5ff":"#000";ctx.fillStyle=captionStyle==="highlight"?"#ffe45c":captionColor;const capY=outputHeight*.88;ctx.shadowColor=captionShadow?"#000":"transparent";ctx.shadowBlur=captionShadow?12:0;if(captionStyle==="boxed"){const m=ctx.measureText(caption).width;ctx.fillStyle="#000b";ctx.fillRect(outputWidth/2-m/2-24,capY-fontSize-12,m+48,fontSize+28);ctx.fillStyle=captionColor;}if(captionAnimation==="pop")ctx.translate(outputWidth/2,capY);else ctx.translate(outputWidth/2,capY);if(captionAnimation==="pop"){const s=.8+.2*clamp(transitionElapsed/.2,0,1);ctx.scale(s,s);}if(captionAnimation==="fade")ctx.globalAlpha=clamp(transitionElapsed/.3,0,1);ctx.strokeText(caption,0,0,outputWidth*.9);ctx.fillText(caption,0,0,outputWidth*.9);ctx.setTransform(1,0,0,1,0,0);}
       };
       const drawStill=(source,transformData,duration,transitionType,startAt)=>{
         return new Promise(resolve=>{
@@ -362,13 +388,14 @@ function App(){
           await new Promise(resolve=>{
             const start=performance.now();
             const tick=()=>{
-              drawFrame(video,c.transform,exportCursor+elapsed,c.transition||"none",elapsed);
               const elapsed=(performance.now()-start)/1000;
+              drawFrame(video,c.transform,exportCursor+elapsed,c.transition||"none",elapsed);
               if(elapsed>=c.duration||video.ended){video.pause();resolve();}else requestAnimationFrame(tick);
             };requestAnimationFrame(tick);
           });
         }
         exportCursor+=c.duration;
+        setExportProgress(Math.round(exportCursor/Math.max(1,mainDuration)*90));
       }
       // Keep the recorder alive through any audio tail after the picture ends.
       const audioTail=Math.max(0,...audioClips.map(c=>(c.startTime||0)+c.duration))-mainDuration;
@@ -378,7 +405,7 @@ function App(){
       const blob=new Blob(chunks,{type});
       if(!blob.size)throw new Error("The export file was empty. Please try a shorter clip.");
       const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=(projectName||"plus-editor").replace(/[^\w-]+/g,"-")+(type.includes("mp4")?".mp4":".webm");document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-      setStatus("Export complete. Your video has been downloaded.");
+      setExportProgress(100);setStatus("Export complete. Your video has been downloaded.");
       videoElements.forEach(v=>{v.pause();v.removeAttribute("src");});
       audioElements.forEach(({audio})=>{audio.pause();audio.removeAttribute("src");});
     }catch(error){
@@ -386,11 +413,11 @@ function App(){
       setStatus("Export failed: "+(error?.message||"unsupported media format"));
     }finally{
       try{await audioContext?.close();}catch{}
-      setExporting(false);
+      setTimeout(()=>setExportProgress(0),900);setExporting(false);
     }
   }
 
-  const editorTools=[[Settings2,"Edit"],[Crop,"Crop"],[Music2,"Audio"],[Type,"Text"],[WandSparkles,"Transitions"],[Captions,"Captions"]];
+  const editorTools=[[Settings2,"Edit"],[Crop,"Crop"],[Music2,"Audio"],[Type,"Text"],[WandSparkles,"Transitions"],[Captions,"Captions"],[Film,"Canvas"],[Sparkles,"Effects"]];
   if(screen==="home")return <div className="mobile-app home-screen">
     <input ref={inputRef} hidden type="file" accept="video/*,image/*" multiple onChange={e=>addImported(e.target.files)}/>
     <section className="home-hero"><div className="home-top"><div className="brand-lockup"><span className="plus-mark"><i></i><i></i></span><span><b>PLUS</b><small>EDITOR</small></span></div><button className="round-search" onClick={()=>setScreen("library")}><Search/></button></div>
@@ -406,11 +433,11 @@ function App(){
   return <div className="mobile-app editor-screen">
     <input ref={inputRef} hidden type="file" accept="video/*,image/*" multiple onChange={e=>addImported(e.target.files)}/>
     <header className="editor-header"><button onClick={()=>{setPlaying(false);setScreen("home");}}><X/></button><button className="project-title" onClick={()=>{const n=window.prompt("Project name",projectName);if(n)setProjectName(n);}}>{projectName}<ChevronDown size={14}/></button><button className="history-button" disabled={!canUndo} onClick={undo}><Undo2/></button><button className="history-button" disabled={!canRedo} onClick={redo}><Redo2/></button><button className="editor-export" disabled={exporting} onClick={exportProject}><Download size={15}/>{exporting?"Exporting…":"Export"}</button></header>
-    <section className="editor-preview"><div className="preview-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
-      {currentAsset?.kind==="video"?<video ref={videoRef} key={currentClip?.clip.id} src={currentAsset.url} playsInline onTimeUpdate={onVideoTime} onEnded={()=>{if(currentClip){const next=currentClip.start+currentClip.clip.duration;if(next<totalDuration)setPlayhead(next);else setPlaying(false);}}} style={{objectFit:fit,opacity:currentClip?.clip.transition==="fade"?clamp(currentClip.offset/.45,0,1):1,clipPath:"inset("+crop.top+"% "+crop.right+"% "+crop.bottom+"% "+crop.left+"%)",transform:"translate(calc(-50% + "+(transform.x+(currentClip?.clip.transition==="slide"?(1-clamp(currentClip.offset/.45,0,1))*110:0))+"px),calc(-50% + "+transform.y+"px)) scale("+(currentClip?.clip.transition==="zoom"?transform.scale*(1.12-.12*clamp(currentClip.offset/.45,0,1)):transform.scale)+") rotate("+transform.rotation+"deg)"}}/>:
+    <section className="editor-preview"><div className="preview-canvas" style={{aspectRatio:aspectW+"/"+aspectH}} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
+      {currentAsset?.kind==="video"?<video ref={videoRef} key={currentClip?.clip.id} src={currentAsset.url} playsInline onTimeUpdate={onVideoTime} onEnded={()=>{if(currentClip){const next=currentClip.start+currentClip.clip.duration;if(next<totalDuration)setPlayhead(next);else setPlaying(false);}}} style={{objectFit:fit,opacity:currentClip?.clip.transition==="fade"?clamp(currentClip.offset/.45,0,1):1,clipPath:"inset("+crop.top+"% "+crop.right+"% "+crop.bottom+"% "+crop.left+"%)",transform:"translate(calc(-50% + "+(transform.x+(currentClip?.clip.transition==="slide"?(1-clamp(currentClip.offset/.45,0,1))*110:0))+"px),calc(-50% + "+transform.y+"px)) scale("+(currentClip?.clip.transition==="zoom"?transform.scale*(1.12-.12*clamp(currentClip.offset/.45,0,1)):transform.scale)+") scaleX("+(transform.flipX?-1:1)+") scaleY("+(transform.flipY?-1:1)+") rotate("+transform.rotation+"deg)"}}/>:
       currentAsset?.kind==="image"?<img src={currentAsset.url} alt="" style={{objectFit:fit,opacity:currentClip?.clip.transition==="fade"?clamp(currentClip.offset/.45,0,1):1,clipPath:"inset("+crop.top+"% "+crop.right+"% "+crop.bottom+"% "+crop.left+"%)",transform:"translate(calc(-50% + "+transform.x+"px),calc(-50% + "+transform.y+"px)) scale("+(currentClip?.clip.transition==="zoom"?transform.scale*(1.12-.12*clamp(currentClip.offset/.45,0,1)):transform.scale)+") rotate("+transform.rotation+"deg)"}}/>:
       <div className="preview-placeholder"><Film/><b>{clips.length?"Select a video or photo clip":"Your preview will appear here"}</b><span>Import media to begin editing</span><button className="cyan-button" onClick={()=>chooseMedia("all")}>Import media</button></div>}
-      {showCaption&&playhead>=captionStart&&playhead<=captionEnd&&<div className="caption-overlay" style={{fontFamily,fontSize:Math.max(12,fontSize*.45),color:captionColor}}>{caption}</div>}
+      {showCaption&&playhead>=captionStart&&playhead<=captionEnd&&<div className="caption-overlay" style={{fontFamily,fontSize:Math.max(12,fontSize*.45),color:captionStyle==="highlight"?"#ffe45c":captionColor,WebkitTextStroke:captionStyle==="clean"?"0":"1.5px #000",background:captionStyle==="boxed"?"#000b":"transparent",padding:captionStyle==="boxed"?"6px 14px":0,textShadow:captionShadow?"0 2px 9px #000":"none",animation:captionAnimation==="pop"?"plusPop .25s ease-out":captionAnimation==="fade"?"plusFade .35s ease-out":captionAnimation==="slide"?"plusSlide .35s ease-out":"none"}}>{caption}</div>}
       {currentAsset&&<div className="canvas-hud">DRAG TO POSITION</div>}
     </div></section>
     <div className="player-controls"><button onClick={()=>setActiveTool("Crop")} title="Crop"><Crop/></button><button className="play-main" onClick={()=>setPlaying(p=>!p)}>{playing?<Pause/>:<Play/>}</button><button onClick={undo} disabled={!canUndo} title="Undo"><Undo2/></button><button onClick={redo} disabled={!canRedo} title="Redo"><Redo2/></button><button onClick={()=>splitSelected()} title="Split clip"><Scissors/></button></div>
@@ -429,15 +456,18 @@ function App(){
     </section>
     <section className="tool-drawer">
       {activeTool==="Crop"?<div className="tool-detail crop-controls"><div className="crop-row"><label>Top</label><input type="range" min="0" max="45" value={crop.top} onChange={e=>setCropValue("top",e.target.value)}/><b>{crop.top}%</b></div><div className="crop-row"><label>Right</label><input type="range" min="0" max="45" value={crop.right} onChange={e=>setCropValue("right",e.target.value)}/><b>{crop.right}%</b></div><div className="crop-row"><label>Bottom</label><input type="range" min="0" max="45" value={crop.bottom} onChange={e=>setCropValue("bottom",e.target.value)}/><b>{crop.bottom}%</b></div><div className="crop-row"><label>Left</label><input type="range" min="0" max="45" value={crop.left} onChange={e=>setCropValue("left",e.target.value)}/><b>{crop.left}%</b></div><div className="transform-actions"><button onClick={()=>{setCrop({top:0,right:0,bottom:0,left:0});setFit("contain");}}>Reset crop</button><button onClick={()=>setFit("cover")}>Fill frame</button><button onClick={()=>setFit("contain")}>Fit frame</button></div></div>:
-      activeTool==="Text"?<div className="tool-detail caption-tools"><label>Caption</label><input value={caption} onChange={e=>setCaption(e.target.value)} placeholder="Type your caption"/><select value={fontFamily} onChange={e=>setFontFamily(e.target.value)}><option value="Arial">Arial</option><option value="Georgia">Georgia</option><option value="Impact">Impact</option><option value="Verdana">Verdana</option><option value="Trebuchet MS">Trebuchet</option><option value="Courier New">Courier</option><option value="Space Grotesk">Space Grotesk</option></select><label>Size</label><input type="range" min="24" max="84" value={fontSize} onChange={e=>setFontSize(+e.target.value)}/><input aria-label="Caption color" type="color" value={captionColor} onChange={e=>setCaptionColor(e.target.value)}/><label>In</label><input aria-label="Caption start time" type="number" min="0" step=".1" value={captionStart} onChange={e=>setCaptionStart(Math.max(0,+e.target.value||0))}/><label>Out</label><input aria-label="Caption end time" type="number" min=".1" step=".1" value={captionEnd} onChange={e=>setCaptionEnd(Math.max(captionStart+.1,+e.target.value||captionStart+.1))}/><button onClick={()=>{setShowCaption(true);setStatus("Caption applied.");}}>Apply</button><button onClick={()=>setShowCaption(false)}>Hide</button></div>:
-      activeTool==="Audio"?<div className="tool-detail audio-tools"><div className="audio-library"><b>Sound library</b><button onClick={()=>addSoundEffect("Soft click","click")}>Click</button><button onClick={()=>addSoundEffect("Pop","pop")}>Pop</button><button onClick={()=>addSoundEffect("Whoosh","whoosh")}>Whoosh</button><button onClick={()=>addSoundEffect("Ambient pad","ambient")}>Ambient</button></div><label>Volume {selectedClip?.volume??volume}%</label><input type="range" min="0" max="100" value={selectedClip?.volume??volume} onChange={e=>selectedClip?updateClip(selectedClip.id,{volume:+e.target.value}):setVolume(+e.target.value)}/><button onClick={()=>chooseMedia("audio")}>Import audio</button></div>:
+      activeTool==="Text"?<div className="tool-detail caption-tools"><label>Caption</label><input value={caption} onChange={e=>setCaption(e.target.value)} placeholder="Type your caption"/><select value={fontFamily} onChange={e=>setFontFamily(e.target.value)}><option value="Arial">Arial</option><option value="Georgia">Georgia</option><option value="Impact">Impact</option><option value="Verdana">Verdana</option><option value="Trebuchet MS">Trebuchet</option><option value="Courier New">Courier</option><option value="Space Grotesk">Space Grotesk</option></select><label>Size</label><input type="range" min="24" max="84" value={fontSize} onChange={e=>setFontSize(+e.target.value)}/><label>Style</label><select value={captionStyle} onChange={e=>setCaptionStyle(e.target.value)}><option value="classic">Classic outline</option><option value="clean">Clean</option><option value="heavy">Heavy outline</option><option value="boxed">Boxed subtitle</option><option value="highlight">Highlight</option><option value="neon">Neon</option></select><label>Animation</label><select value={captionAnimation} onChange={e=>setCaptionAnimation(e.target.value)}><option value="none">None</option><option value="pop">Pop</option><option value="fade">Fade</option><option value="slide">Slide</option></select><label><input type="checkbox" checked={captionShadow} onChange={e=>setCaptionShadow(e.target.checked)}/> Shadow</label><input aria-label="Caption color" type="color" value={captionColor} onChange={e=>setCaptionColor(e.target.value)}/><label>In</label><input aria-label="Caption start time" type="number" min="0" step=".1" value={captionStart} onChange={e=>setCaptionStart(Math.max(0,+e.target.value||0))}/><label>Out</label><input aria-label="Caption end time" type="number" min=".1" step=".1" value={captionEnd} onChange={e=>setCaptionEnd(Math.max(captionStart+.1,+e.target.value||captionStart+.1))}/><button onClick={()=>{setShowCaption(true);setStatus("Caption applied.");}}>Apply</button><button onClick={()=>setShowCaption(false)}>Hide</button></div>:
+      activeTool==="Canvas"?<div className="tool-detail canvas-tools"><label>Canvas ratio</label><div className="ratio-grid">{["9:16","16:9","1:1","4:5","4:3","21:9"].map(r=><button key={r} className={aspectRatio===r?"active":""} onClick={()=>setAspectRatio(r)}>{r}</button>)}</div><label>Export resolution</label><select value={exportSize} onChange={e=>setExportSize(e.target.value)}><option value="720">720p</option><option value="1080">1080p</option><option value="1440">1440p</option><option value="2160">4K</option></select><label>Frame rate</label><select value={exportFps} onChange={e=>setExportFps(e.target.value)}><option value="24">24 FPS</option><option value="30">30 FPS</option><option value="60">60 FPS</option></select><span>Output: {outputWidth} × {outputHeight}</span></div>:
+      activeTool==="Effects"?<div className="tool-detail effects-tools"><label>Flip & transform</label><div className="transform-actions"><button onClick={()=>toggleFlip("flipX")}>Flip horizontal</button><button onClick={()=>toggleFlip("flipY")}>Flip vertical</button><button onClick={()=>setTransformValue("rotation",transform.rotation+90)}>Rotate 90°</button></div><label>Scale</label><input type="range" min=".25" max="3" step=".01" value={transform.scale} onChange={e=>setTransformValue("scale",e.target.value)}/><label>Rotation</label><input type="range" min="-180" max="180" value={transform.rotation} onChange={e=>setTransformValue("rotation",e.target.value)}/><p>More visual effects and color grading are next in the editing engine upgrade.</p></div>:
+      activeTool==="Audio"?<div className="tool-detail audio-tools"><div className="voice-generator"><b>AI voice studio</b><textarea value={voiceText} onChange={e=>setVoiceText(e.target.value)} placeholder="Paste your narration here…"/><select value={voiceChoice} onChange={e=>setVoiceChoice(e.target.value)}><option value="pNInz6obpgDQGcFmaJgB">Adam · Deep narration</option><option value="TxGEqnHWrfWFTfGW9XjX">Josh · Conversational</option><option value="ErXwobaYiN019PkySvjV">Antoni · Warm</option><option value="EXAVITQu4vr4xnSDxMaL">Bella · Expressive</option><option value="21m00Tcm4TlvDq8ikWAM">Rachel · Clear</option></select><input type="password" value={voiceApiKey} onChange={e=>setVoiceApiKey(e.target.value)} placeholder="ElevenLabs API key (not saved)"/><button disabled={voiceBusy} onClick={generateVoice}>{voiceBusy?"Generating…":"Generate AI voice"}</button><small>Requires your own ElevenLabs API key and available credits. Your key stays in this browser session.</small></div><div className="audio-library"><b>Sound effects</b><button onClick={()=>addSoundEffect("Soft click","click")}>Click</button><button onClick={()=>addSoundEffect("Pop","pop")}>Pop</button><button onClick={()=>addSoundEffect("Whoosh","whoosh")}>Whoosh</button><button onClick={()=>addSoundEffect("Ambient pad","ambient")}>Ambient</button></div><label>Volume {selectedClip?.volume??volume}%</label><input type="range" min="0" max="100" value={selectedClip?.volume??volume} onChange={e=>selectedClip?updateClip(selectedClip.id,{volume:+e.target.value}):setVolume(+e.target.value)}/><button onClick={()=>chooseMedia("audio")}>Import audio</button></div>:
       activeTool==="Captions"?<div className="tool-detail"><p>Write and style captions in Text. Set the start and end time for each caption segment.</p><button onClick={()=>{addText();setActiveTool("Text");}}>Add caption</button></div>:
       activeTool==="Transitions"?<div className="tool-detail transition-tools"><label>Transition</label><select disabled={!selectedClip||selectedClip.kind==="audio"} value={selectedClip?.transition||"none"} onChange={e=>{remember();updateClip(selectedClip.id,{transition:e.target.value});}}><option value="none">None</option><option value="fade">Fade</option><option value="zoom">Zoom</option><option value="slide">Slide</option></select><span>Applied at the beginning of the selected clip</span></div>:
       activeTool==="Layers"?<div className="tool-detail"><p>Video, audio and caption tracks are separated below. Select any clip to split or delete it.</p></div>:
       <div className="tool-detail transform-controls"><div className="transform-row"><label>Scale</label><input type="range" min=".25" max="3" step=".01" value={transform.scale} onChange={e=>setTransformValue("scale",e.target.value)}/><b>{Math.round(transform.scale*100)}%</b></div><div className="transform-row"><label>Rotate</label><input type="range" min="-180" max="180" value={transform.rotation} onChange={e=>setTransformValue("rotation",e.target.value)}/><b>{transform.rotation}°</b></div><div className="transform-actions"><button onClick={()=>setTransformValue("rotation",0)}><RotateCcw/> Reset</button><button onClick={splitSelected}><Scissors/> Split</button><button onClick={()=>selectedClip&&removeClip(selectedClip.id)}><Trash2/> Delete</button></div></div>}
       <nav className="editor-toolbar">{editorTools.map(([Icon,label])=><button key={label} className={activeTool===label?"active":""} onClick={()=>setActiveTool(label)}><Icon/><span>{label}</span></button>)}</nav>
     </section>
-    <div className="editor-status">{exporting?"Rendering video…":status}</div>
+    <div className="editor-status">{exporting?"Rendering video… "+exportProgress+"%":status}</div>
+    {exporting&&<div className="export-overlay"><div className="export-card"><div className="export-spinner"/><b>Rendering your video</b><span>Keep PLUS EDITOR open while we prepare your export.</span><div className="export-progress"><i style={{width:exportProgress+"%"}}/></div><strong>{exportProgress}%</strong></div></div>}
     {audioClips.map(c=>{const a=assets.find(x=>x.id===c.assetId);return a?<audio key={c.id} ref={el=>{if(el)audioRefs.current[c.id]=el;else delete audioRefs.current[c.id];}} src={a.url} preload="auto"/>:null;})}
   </div>;
 }
