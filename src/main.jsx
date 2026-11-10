@@ -176,6 +176,7 @@ function App(){
     e.currentTarget.setPointerCapture(e.pointerId);
     const clip=clips.find(c=>c.id===id);if(!clip)return;
     dragRef.current={id,mode,pointerId:e.pointerId,startX:e.clientX,base:copyState(clip),moved:false};
+    if(mode!=="move")remember();
     setSelected(id);
   }
   function moveClipPointer(e){
@@ -197,7 +198,7 @@ function App(){
     if(d.moved&&d.mode==="move"){
       if(d.base.kind==="audio"){remember();updateClip(d.id,{startTime:Math.max(0,(d.base.startTime||0)+delta)});setStatus("Audio clip repositioned.");}
       else reorderMain(d.id,Math.max(0,clipStart(d.id)+delta));
-    }else if(d.moved){remember();setStatus("Clip edge trimmed.");}
+    }else if(d.moved){setStatus("Clip edge trimmed.");}
     dragRef.current=null;
   }
   function setTransformValue(key,value){
@@ -222,8 +223,8 @@ function App(){
     const target=currentClip.clip.sourceIn+currentClip.offset;
     if(!playing&&Math.abs(video.currentTime-target)>.12){try{video.currentTime=target;}catch{}}
     video.volume=clamp(selectedClip?.volume??volume,0,100)/100;
-    if(playing)video.play().catch(()=>setPlaying(false));else video.pause();
-  },[currentClip?.clip.id,currentAsset?.url,playing]);
+    if(playing&&video.paused)video.play().catch(()=>setPlaying(false));else if(!playing)video.pause();
+  },[currentClip?.clip.id,currentAsset?.url,playing,playhead]);
   useEffect(()=>{
     audioClips.forEach(c=>{
       const el=audioRefs.current[c.id];if(!el)return;
@@ -303,6 +304,10 @@ function App(){
       };
       const videoElements=[];
       recorder.start(250);
+      audioElements.forEach(({audio,clip})=>{
+        const at=Math.max(0,clip.startTime||0);
+        setTimeout(()=>{try{audio.currentTime=clip.sourceIn||0;audio.play();setTimeout(()=>audio.pause(),clip.duration*1000);}catch{}},at*1000);
+      });
       for(const c of mainClips){
         const asset=assets.find(a=>a.id===c.assetId);if(!asset)continue;
         if(c.kind==="image"){
