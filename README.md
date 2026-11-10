@@ -1,21 +1,30 @@
 # PLUS EDITOR
 
-A black-and-white, responsive video-editing workspace built with React and Vite.
+A mobile-first video editing workspace with its own monochrome PLUS identity.
+
+## Working in this build
+- Import video, photo and audio files selected from the device.
+- Arrange video/photo clips in a sequential timeline.
+- Split a selected video/photo clip at the playhead (creates two non-destructive source ranges).
+- Reorder clips by dragging them in the timeline or using Move left / Move right.
+- Trim clip start/end in 0.5-second increments with the trim controls.
+- Scrub the playhead, zoom the timeline, and preview the selected footage.
+- Drag footage in the preview; adjust scale and rotation.
+- Switch preview framing between Fit and Fill/Crop.
+- Add an editable text overlay.
+- Add audio media to a separate audio lane.
+
+## Not implemented yet
+- Combined sequence rendering/export (the Export control intentionally explains this limitation).
+- Audio mixing/playback, waveform editing and audio trimming.
+- Drag-to-trim handles, frame-by-frame precision, keyframes, transitions, filters, captions transcription, AI tools and background removal.
+- Persistent project save/reopen.
 
 ## Run locally
 ```bash
 npm install
 npm run dev
+npm run build
 ```
 
-## Current foundation
-- Import local video, image, and audio files
-- Preview selected video and images
-- Basic media bin and track listing
-- Text overlay preview
-- Video volume control
-- WebM capture export where the browser supports `captureStream` and `MediaRecorder`
-- Responsive layout for desktop and Android-sized screens
-
-## Important
-This is the first source-code foundation, not a Premiere Pro replacement yet. Multi-clip timeline playback, precise trimming/splitting, rendered transitions/effects, automatic speech captions, AI voice generation, background removal, and advanced export are not implemented in this version. Those need to be added and tested as separate editing-engine stages.
+The editor is an in-progress browser-based project. It does not claim feature parity with Premiere Pro or CapCut.
