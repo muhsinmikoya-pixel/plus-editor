@@ -16,6 +16,7 @@ function App() {
   const [duration, setDuration] = useState(0);
   const videoRef = useRef(null);
   const inputRef = useRef(null);
+  const galleryRef = useRef(null);
   const selectedFile = files.find(f => f.id === selected);
   const mediaFiles = useMemo(() => files.filter(f => f.kind === "video" || f.kind === "image"), [files]);
 
@@ -92,7 +93,7 @@ function App() {
   return <div className="app-shell">
     <header className="topbar">
       <a className="brand" href="#" aria-label="Plus Editor home">
-        <span className="brand-mark"><span></span><i></i></span>
+        <span className="brand-mark"><span></span><i></i><em></em></span>
         <span className="brand-name"><b>PLUS</b><small>EDITOR</small></span>
       </a>
       <div className="project-name"><span className="live-dot"></span> Untitled project <ChevronDown size={14}/></div>
@@ -105,7 +106,9 @@ function App() {
         <section className="asset-panel">
           <div className="panel-heading"><div><span className="eyebrow">WORKSPACE</span><h2>{activeTool}</h2></div><button className="icon-btn small" onClick={() => inputRef.current?.click()}><Plus size={17}/></button></div>
           {activeTool === "Media" && <>
-            <button className="import-card" onClick={() => inputRef.current?.click()}><ImagePlus size={23}/><b>Import media</b><span>Video, image or audio</span></button>
+            <button className="import-card" onClick={() => galleryRef.current?.click()}><ImagePlus size={23}/><b>Choose from gallery</b><span>Pick videos or photos from your phone</span></button>
+            <input ref={galleryRef} type="file" accept="video/*,image/*" multiple hidden onChange={e => importFiles(e.target.files)}/>
+            <button className="audio-import" onClick={() => inputRef.current?.click()}><AudioLines size={15}/> Import audio files</button>
             <input ref={inputRef} type="file" accept="video/*,image/*,audio/*" multiple hidden onChange={e => importFiles(e.target.files)}/>
             <div className="asset-list">{files.map(f => <button key={f.id} className={selected === f.id ? "asset active" : "asset"} onClick={() => addToTimeline(f)}><span className="asset-thumb">{f.kind === "video" ? <Film size={17}/> : f.kind === "audio" ? <AudioLines size={17}/> : <ImagePlus size={17}/>}</span><span className="asset-info"><b>{f.name}</b><small>{f.kind.toUpperCase()}</small></span><Plus size={15}/></button>)}</div>
             {!files.length && <p className="empty-note">Your imported files will appear here.</p>}
@@ -123,7 +126,7 @@ function App() {
         <div className="preview-stage"><div className="preview-frame" style={{transform:`scale(${zoom/100})`}}>
           {selectedFile?.kind === "video" ? <video ref={videoRef} key={selectedFile.id} src={selectedFile.url} controls={false} onLoadedMetadata={e => setDuration(e.target.duration || 0)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} /> :
            selectedFile?.kind === "image" ? <img src={selectedFile.url} alt="Selected media"/> :
-           <div className="welcome-preview"><div className="large-mark"><span></span><i></i></div><b>Make something<br/>worth watching.</b><small>Import a video to begin editing.</small></div>}
+           <div className="welcome-preview"><div className="large-mark"><span></span><i></i><em></em></div><b>Make something<br/>worth watching.</b><small>Import a video to begin editing.</small></div>}
           {showCaption && <div className="caption-overlay">{caption}</div>}
         </div></div>
         <div className="playback-bar"><button className="play-button" onClick={() => {if(videoRef.current){if(videoRef.current.paused) videoRef.current.play(); else videoRef.current.pause();}}}>{playing ? <Square size={15}/> : <Play size={16} fill="currentColor"/>}</button><span className="timecode">00:00:00</span><div className="playback-line"></div><span className="timecode">{duration ? new Date(duration*1000).toISOString().slice(11,19) : "00:00:00"}</span></div>
@@ -145,7 +148,7 @@ function App() {
       </div></div>
       <div className="statusbar"><span><span className="live-dot"></span>{status}</span><span>PLUS EDITOR · BETA</span></div>
     </section>
-    <footer className="mobile-footer"><button onClick={() => inputRef.current?.click()}><FolderOpen/>Media</button><button onClick={() => setActiveTool("Text")}><Type/>Text</button><button onClick={() => setActiveTool("Audio")}><Music2/>Audio</button><button onClick={exportCurrent}><Download/>Export</button></footer>
+    <footer className="mobile-footer"><button onClick={() => galleryRef.current?.click()}><FolderOpen/>Gallery</button><button onClick={() => setActiveTool("Text")}><Type/>Text</button><button onClick={() => setActiveTool("Audio")}><Music2/>Audio</button><button onClick={exportCurrent}><Download/>Export</button></footer>
   </div>;
 }
 
