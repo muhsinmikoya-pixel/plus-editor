@@ -1,18 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ArrowLeft, AudioLines, Captions, ChevronDown, ChevronRight, Crop, Download, Film, Folder, Image, ImagePlus, Layers, Mic, Music2, Pause, Play, Plus, Scissors, Search, Settings2, Sparkles, Type, Undo2, Volume2, WandSparkles, X, ZoomIn, ZoomOut, RotateCcw, Trash2, MoveHorizontal } from "lucide-react";
+import { ArrowLeft, AudioLines, Captions, ChevronDown, ChevronRight, Crop, Download, Film, Folder, Image, ImagePlus, Layers, Mic, Music2, Pause, Play, Plus, Scissors, Search, Settings2, Sparkles, Type, Undo2, Redo2, Volume2, WandSparkles, X, ZoomIn, ZoomOut, RotateCcw, Trash2, MoveHorizontal, Check } from "lucide-react";
 import "./style.css";
 
-const uid = () => globalThis.crypto?.randomUUID?.() || String(Date.now()) + Math.random().toString(16).slice(2);
-const fmt = n => { n = Math.max(0, Number(n) || 0); return String(Math.floor(n/60)).padStart(2,"0")+":"+String(Math.floor(n%60)).padStart(2,"0"); };
-const clamp = (n,a,b) => Math.max(a,Math.min(b,n));
+const uid=()=>globalThis.crypto?.randomUUID?.()||String(Date.now())+Math.random().toString(16).slice(2);
+const fmt=n=>{n=Math.max(0,Number(n)||0);return String(Math.floor(n/60)).padStart(2,"0")+":"+String(Math.floor(n%60)).padStart(2,"0");};
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+const copyState=x=>JSON.parse(JSON.stringify(x));
 
 function App(){
   const [screen,setScreen]=useState("home");
   const [assets,setAssets]=useState([]);
   const [clips,setClips]=useState([]);
   const [selected,setSelected]=useState(null);
-  const [galleryTab,setGalleryTab]=useState("Videos");
   const [playhead,setPlayhead]=useState(0);
   const [playing,setPlaying]=useState(false);
   const [activeTool,setActiveTool]=useState("Edit");
@@ -21,30 +21,59 @@ function App(){
   const [zoom,setZoom]=useState(48);
   const [volume,setVolume]=useState(100);
   const [fit,setFit]=useState("contain");
+  const [transform,setTransform]=useState({x:0,y:0,scale:1,rotation:0});
+  const [crop,setCrop]=useState({top:0,right:0,bottom:0,left:0});
   const [caption,setCaption]=useState("Your text");
   const [showCaption,setShowCaption]=useState(false);
-  const [transform,setTransform]=useState({x:0,y:0,scale:1,rotation:0});
-  const [crop,setCrop]=useState({left:0,top:0,right:0,bottom:0});
+  const [exporting,setExporting]=useState(false);
   const inputRef=useRef(null);
   const videoRef=useRef(null);
   const timelineRef=useRef(null);
+  const audioRefs=useRef({});
   const dragRef=useRef(null);
-  const clipsRef=useRef(clips);
-  useEffect(()=>{clipsRef.current=clips;},[clips]);
-  useEffect(()=>()=>assets.forEach(a=>URL.revokeObjectURL(a.url)),[]);
-  const selectedClip=clips.find(c=>c.id===selected)||clips[0]||null;
+  const historyRef=useRef([]);
+  const redoRef=useRef([]);
+  const [historyVersion,setHistoryVersion]=useState(0);
+
+  const mainClips=useMemo(()=>clips.filter(c=>c.kind!=="audio"),[clips]);
+  const audioClips=useMemo(()=>clips.filter(c=>c.kind==="audio"),[clips]);
+  const mainDuration=mainClips.reduce((n,c)=>n+c.duration,0);
+  const totalDuration=Math.max(mainDuration,...audioClips.map(c=>(c.startTime||0)+c.duration),0);
+  const selectedClip=clips.find(c=>c.id===selected)||null;
   const selectedAsset=selectedClip?assets.find(a=>a.id===selectedClip.assetId):null;
-  const videoClips=clips.filter(c=>c.kind!=="audio");
-  const audioClips=clips.filter(c=>c.kind==="audio");
-  const totalDuration=videoClips.reduce((n,c)=>n+c.duration,0);
   const currentClip=useMemo(()=>{
-    let t=0;
-    for(const c of videoClips){ if(playhead>=t && playhead<t+c.duration) return {clip:c,offset:playhead-t,start:t}; t+=c.duration; }
-    return videoClips.length?{clip:videoClips[videoClips.length-1],offset:videoClips[videoClips.length-1].duration,start:Math.max(0,totalDuration-videoClips[videoClips.length-1].duration)}:null;
-  },[videoClips,playhead,totalDuration]);
+    let start=0;
+    for(const c of mainClips){if(playhead>=start&&playhead<start+c.duration)return {clip:c,start,offset:playhead-start};start+=c.duration;}
+    if(mainClips.length&&playhead<=mainDuration){const c=mainClips[mainClips.length-1];return {clip:c,start:Math.max(0,mainDuration-c.duration),offset:c.duration};}
+    return null;
+  },[mainClips,playhead,mainDuration]);
   const currentAsset=currentClip?assets.find(a=>a.id===currentClip.clip.assetId):selectedAsset;
   const pxPerSec=zoom;
-  const timelineWidth=Math.max(640,totalDuration*pxPerSec+240);
+  const timelineWidth=Math.max(640,totalDuration*pxPerSec+180);
+  const canUndo=historyRef.current.length>0;
+  const canRedo=redoRef.current.length>0;
+
+  function remember(){
+    historyRef.current=[...historyRef.current.slice(-39),{clips:copyState(clips),selected,playhead,caption,showCaption}];
+    redoRef.current=[];
+    setHistoryVersion(v=>v+1);
+  }
+  function undo(){
+    if(!historyRef.current.length){setStatus("Nothing to undo.");return;}
+    const previous=historyRef.current[historyRef.current.length-1];
+    redoRef.current=[...redoRef.current,{clips:copyState(clips),selected,playhead,caption,showCaption}];
+    historyRef.current=historyRef.current.slice(0,-1);
+    setClips(previous.clips);setSelected(previous.selected);setPlayhead(previous.playhead);setCaption(previous.caption);setShowCaption(previous.showCaption);
+    setHistoryVersion(v=>v+1);setStatus("Undo complete.");
+  }
+  function redo(){
+    if(!redoRef.current.length){setStatus("Nothing to redo.");return;}
+    const next=redoRef.current[redoRef.current.length-1];
+    historyRef.current=[...historyRef.current,{clips:copyState(clips),selected,playhead,caption,showCaption}];
+    redoRef.current=redoRef.current.slice(0,-1);
+    setClips(next.clips);setSelected(next.selected);setPlayhead(next.playhead);setCaption(next.caption);setShowCaption(next.showCaption);
+    setHistoryVersion(v=>v+1);setStatus("Redo complete.");
+  }
 
   function chooseMedia(kind="all"){
     if(!inputRef.current)return;
@@ -52,150 +81,323 @@ function App(){
     inputRef.current.value="";
     inputRef.current.click();
   }
+  function startNew(){
+    setPlaying(false);setAssets([]);setClips([]);setSelected(null);setPlayhead(0);setProjectName("Untitled project");
+    setCaption("Your text");setShowCaption(false);setTransform({x:0,y:0,scale:1,rotation:0});setCrop({top:0,right:0,bottom:0,left:0});
+    historyRef.current=[];redoRef.current=[];setHistoryVersion(v=>v+1);setScreen("editor");
+    // The native Android/iOS file picker is opened directly from this tap.
+    chooseMedia("all");
+  }
+  function probeDuration(asset){
+    if(asset.kind==="image")return;
+    const el=document.createElement(asset.kind==="audio"?"audio":"video");
+    el.preload="metadata";el.src=asset.url;
+    el.onloadedmetadata=()=>{
+      const d=Number.isFinite(el.duration)&&el.duration>0?el.duration:5;
+      setAssets(old=>old.map(a=>a.id===asset.id?{...a,duration:d}:a));
+      setClips(old=>old.map(c=>c.assetId===asset.id?{...c,duration:d,sourceOut:d}:c));
+      el.removeAttribute("src");el.load();
+    };
+    el.onerror=()=>{setStatus("Could not read the duration of "+asset.name+". You can still try using the file.");};
+  }
   function addImported(list){
     const incoming=Array.from(list||[]);
-    if(!incoming.length)return;
-    const newAssets=incoming.map(file=>({id:uid(),name:file.name,file,url:URL.createObjectURL(file),kind:file.type.startsWith("video/")?"video":file.type.startsWith("audio/")?"audio":"image",duration: file.type.startsWith("image/")?5:0}));
+    if(!incoming.length){setStatus("No media selected. Choose a file to begin.");return;}
+    const newAssets=incoming.map(file=>({id:uid(),name:file.name,file,url:URL.createObjectURL(file),kind:file.type.startsWith("video/")?"video":file.type.startsWith("audio/")?"audio":"image",duration:file.type.startsWith("image/")?5:0}));
+    const newClips=newAssets.map(a=>({id:uid(),assetId:a.id,name:a.name,kind:a.kind,sourceIn:0,sourceOut:a.duration,duration:a.duration||5,startTime:0,volume:100,transform:{x:0,y:0,scale:1,rotation:0}}));
     setAssets(old=>[...old,...newAssets]);
-    const newClips=newAssets.map(a=>({id:uid(),assetId:a.id,name:a.name,kind:a.kind,sourceIn:0,sourceOut:a.duration||0,duration:a.duration||5,volume:100,transform:{x:0,y:0,scale:1,rotation:0}}));
     setClips(old=>[...old,...newClips]);
-    setSelected(newClips.find(c=>c.kind!=="audio")?.id||newClips[0].id);
-    setGalleryTab(newAssets.some(a=>a.kind==="video")?"Videos":"Photos");
-    setScreen("editor");
-    setStatus(incoming.length+" media item(s) added to timeline");
+    const firstVideo=newClips.find(c=>c.kind!=="audio");
+    setSelected(firstVideo?.id||newClips[0].id);
+    setPlayhead(0);setScreen("editor");
+    setStatus(incoming.length+" media item(s) imported. Select a clip to edit.");
+    newAssets.forEach(probeDuration);
   }
-  function startNew(){setAssets([]);setClips([]);setSelected(null);setPlayhead(0);setProjectName("Untitled project");setScreen("gallery");}
   function updateClip(id,patch){setClips(old=>old.map(c=>c.id===id?{...c,...patch}:c));}
+  function clipStart(id){
+    let start=0;
+    for(const c of mainClips){if(c.id===id)return start;start+=c.duration;}
+    return audioClips.find(c=>c.id===id)?.startTime||0;
+  }
   function splitSelected(){
     if(!selectedClip){setStatus("Select a timeline clip first.");return;}
-    if(selectedClip.kind==="audio"){setStatus("Audio splitting is not enabled in this build yet.");return;}
-    let start=0;for(const c of videoClips){if(c.id===selectedClip.id)break;start+=c.duration;}
+    const start=selectedClip.kind==="audio"?(selectedClip.startTime||0):clipStart(selectedClip.id);
     const local=playhead-start;
-    const cutSource=selectedClip.sourceIn+local;
-    if(local<=0.04||local>=selectedClip.duration-0.04){setStatus("Move the playhead inside the selected clip to split it.");return;}
-    const left={...selectedClip,id:uid(),sourceOut:cutSource,duration:local};
-    const right={...selectedClip,id:uid(),sourceIn:cutSource,duration:selectedClip.duration-local};
+    if(local<=0.04||local>=selectedClip.duration-0.04){setStatus("Move the playhead inside the selected clip before splitting.");return;}
+    remember();
+    const cut=selectedClip.sourceIn+local;
+    const left={...selectedClip,id:uid(),sourceOut:cut,duration:local};
+    const right={...selectedClip,id:uid(),sourceIn:cut,duration:selectedClip.duration-local};
     setClips(old=>{const i=old.findIndex(c=>c.id===selectedClip.id);return [...old.slice(0,i),left,right,...old.slice(i+1)];});
-    setSelected(right.id);setStatus("Clip split at "+fmt(playhead)+". Both pieces can now be edited separately.");
+    setSelected(right.id);setStatus("Split complete. The two pieces are now independent clips.");
   }
   function trimClip(id,edge,delta){
     const c=clips.find(x=>x.id===id);if(!c)return;
-    const d=Math.max(0.05,delta);
-    if(edge==="left" && c.duration>d+0.05){updateClip(id,{sourceIn:c.sourceIn+d,duration:c.duration-d});setPlayhead(p=>Math.max(0,p-d));}
-    if(edge==="right" && c.sourceOut<=0){setStatus("Wait for the video preview to load before trimming its end.");return;}
-    if(edge==="right" && c.duration>d+0.05){updateClip(id,{sourceOut:c.sourceOut-d,duration:c.duration-d});}
-    setStatus("Trim updated. Original media remains unchanged.");
-  }
-  function moveClip(id,delta){
-    setClips(old=>{const from=old.findIndex(c=>c.id===id);const to=clamp(from+delta,0,old.length-1);if(from<0||to===from)return old;const next=[...old];const [item]=next.splice(from,1);next.splice(to,0,item);return next;});
-    setStatus("Timeline order updated.");
+    const amount=Number(delta);
+    if(edge==="left"){
+      if(c.duration-amount<0.08){setStatus("A clip must be at least a fraction of a second long.");return;}
+      remember();updateClip(id,{sourceIn:c.sourceIn+amount,duration:c.duration-amount});
+      setPlayhead(p=>Math.max(0,p-amount));
+    }else{
+      if(c.duration-amount<0.08){setStatus("A clip must be at least a fraction of a second long.");return;}
+      remember();updateClip(id,{sourceOut:Math.max(c.sourceIn+0.05,c.sourceOut-amount),duration:c.duration-amount});
+    }
+    setStatus("Trim applied.");
   }
   function removeClip(id){
-    setClips(old=>old.filter(c=>c.id!==id));
+    remember();setClips(old=>old.filter(c=>c.id!==id));
     if(selected===id)setSelected(clips.find(c=>c.id!==id)?.id||null);
-    setStatus("Clip removed from timeline. Source media is kept in the project bin.");
+    setStatus("Clip deleted from the timeline.");
+  }
+  function reorderMain(id,targetTime){
+    const list=[...mainClips];const from=list.findIndex(c=>c.id===id);if(from<0)return;
+    const item=list[from];const remaining=list.filter(c=>c.id!==id);
+    let cursor=0,index=remaining.length;
+    for(let i=0;i<remaining.length;i++){if(targetTime<cursor+remaining[i].duration/2){index=i;break;}cursor+=remaining[i].duration;}
+    const reordered=[...remaining.slice(0,index),item,...remaining.slice(index)];
+    const audio=clips.filter(c=>c.kind==="audio");
+    remember();setClips([...reordered,...audio]);setStatus("Clip order changed.");
   }
   function seekTo(time){
-    const t=clamp(time,0,totalDuration);
-    setPlayhead(t);
-    let sum=0,found=null,offset=0;
-    for(const c of clips){if(t>=sum&&t<sum+c.duration){found=c;offset=t-sum;break;}sum+=c.duration;}
-    if(found){setSelected(found.id);const a=assets.find(x=>x.id===found.assetId);if(a?.kind==="video"&&videoRef.current){const target=found.sourceIn+offset;if(Math.abs(videoRef.current.currentTime-target)>0.15)videoRef.current.currentTime=target;}}
+    const t=clamp(time,0,totalDuration);setPlayhead(t);
+    let start=0,found=null;
+    for(const c of mainClips){if(t>=start&&t<start+c.duration){found=c;break;}start+=c.duration;}
+    if(found)setSelected(found.id);
   }
-  function onTimelinePointer(e){
+  function onTimelineBackground(e){
+    if(dragRef.current)return;
+    if(e.target.closest(".timeline-clip")||e.target.closest("button"))return;
     const el=timelineRef.current;if(!el)return;
-    const r=el.getBoundingClientRect();const x=e.clientX-r.left+el.scrollLeft;
+    const rect=el.getBoundingClientRect();const x=e.clientX-rect.left+el.scrollLeft;
     seekTo(clamp(x/pxPerSec,0,totalDuration));
   }
-  function onClipDragStart(e,id){e.dataTransfer.setData("text/plain",id);e.dataTransfer.effectAllowed="move";}
-  function onClipDrop(e,targetId){
-    e.preventDefault();const id=e.dataTransfer.getData("text/plain");if(!id||id===targetId)return;
-    setClips(old=>{const from=old.findIndex(c=>c.id===id),to=old.findIndex(c=>c.id===targetId);if(from<0||to<0)return old;const next=[...old];const [item]=next.splice(from,1);next.splice(to,0,item);return next;});
-    setStatus("Clip moved to a new timeline position.");
+  function beginClipDrag(e,id,mode="move"){
+    e.stopPropagation();e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const clip=clips.find(c=>c.id===id);if(!clip)return;
+    dragRef.current={id,mode,pointerId:e.pointerId,startX:e.clientX,base:copyState(clip),moved:false};
+    setSelected(id);
   }
-  function setTransformValue(k,v){const next={...transform,[k]:Number(v)};setTransform(next);if(selectedClip)updateClip(selectedClip.id,{transform:next});}
-  function pointerDown(e){if(!currentAsset||currentAsset.kind==="audio")return;e.currentTarget.setPointerCapture(e.pointerId);dragRef.current={x:e.clientX,y:e.clientY,tx:transform.x,ty:transform.y};}
-  function pointerMove(e){if(!dragRef.current)return;const r=e.currentTarget.getBoundingClientRect();const next={...transform,x:clamp(dragRef.current.tx+e.clientX-dragRef.current.x,-r.width/2,r.width/2),y:clamp(dragRef.current.ty+e.clientY-dragRef.current.y,-r.height/2,r.height/2)};setTransform(next);if(selectedClip)updateClip(selectedClip.id,{transform:next});}
-  function pointerUp(){dragRef.current=null;}
-  useEffect(()=>{
-    if(!playing)return;
-    const timer=setInterval(()=>{
-      setPlayhead(old=>{
-        const next=old+0.05;
-        if(next>=totalDuration){setPlaying(false);return 0;}
-        return next;
-      });
-    },50);
-    return ()=>clearInterval(timer);
-  },[playing,totalDuration]);
+  function moveClipPointer(e){
+    const d=dragRef.current;if(!d||d.pointerId!==e.pointerId)return;
+    const delta=(e.clientX-d.startX)/pxPerSec;
+    if(Math.abs(delta)>.02)d.moved=true;
+    if(d.mode==="trim-left"){
+      const amount=clamp(delta,-d.base.sourceIn,d.base.duration-.08);
+      const nextIn=d.base.sourceIn+amount;
+      updateClip(d.id,{sourceIn:nextIn,duration:d.base.duration-amount});
+    }else if(d.mode==="trim-right"){
+      const amount=clamp(delta,-d.base.duration+.08,Math.max(0,(d.base.sourceOut||d.base.duration)-.05));
+      updateClip(d.id,{sourceOut:d.base.sourceOut-amount,duration:d.base.duration-amount});
+    }
+  }
+  function endClipPointer(e){
+    const d=dragRef.current;if(!d||d.pointerId!==e.pointerId)return;
+    const delta=(e.clientX-d.startX)/pxPerSec;
+    if(d.moved&&d.mode==="move"){
+      if(d.base.kind==="audio"){remember();updateClip(d.id,{startTime:Math.max(0,(d.base.startTime||0)+delta)});setStatus("Audio clip repositioned.");}
+      else reorderMain(d.id,Math.max(0,clipStart(d.id)+delta));
+    }else if(d.moved){remember();setStatus("Clip edge trimmed.");}
+    dragRef.current=null;
+  }
+  function setTransformValue(key,value){
+    const next={...transform,[key]:Number(value)};setTransform(next);
+    if(selectedClip)updateClip(selectedClip.id,{transform:next});
+  }
+  function pointerDown(e){
+    if(!currentAsset||currentAsset.kind==="audio"||e.target.closest(".canvas-controls"))return;
+    e.currentTarget.setPointerCapture(e.pointerId);dragRef.current={mode:"canvas",pointerId:e.pointerId,x:e.clientX,y:e.clientY,tx:transform.x,ty:transform.y};
+  }
+  function pointerMove(e){
+    const d=dragRef.current;if(!d||d.mode!=="canvas"||d.pointerId!==e.pointerId)return;
+    const r=e.currentTarget.getBoundingClientRect();
+    const next={...transform,x:clamp(d.tx+e.clientX-d.x,-r.width/2,r.width/2),y:clamp(d.ty+e.clientY-d.y,-r.height/2,r.height/2)};
+    setTransform(next);if(selectedClip)updateClip(selectedClip.id,{transform:next});
+  }
+  function pointerUp(e){if(dragRef.current?.mode==="canvas"&&dragRef.current.pointerId===e.pointerId)dragRef.current=null;}
+  useEffect(()=>{if(selectedClip?.transform)setTransform(selectedClip.transform);},[selectedClip?.id]);
   useEffect(()=>{
     if(!videoRef.current||!currentClip||currentAsset?.kind!=="video")return;
+    const video=videoRef.current;
     const target=currentClip.clip.sourceIn+currentClip.offset;
-    if(Math.abs(videoRef.current.currentTime-target)>0.25){try{videoRef.current.currentTime=target;}catch{}}
-    videoRef.current.volume=clamp(volume,0,100)/100;
-    if(playing)videoRef.current.play().catch(()=>setPlaying(false));else videoRef.current.pause();
-  },[currentClip?.clip.id,playing,currentAsset?.url,volume]);
-  useEffect(()=>{if(selectedClip?.transform)setTransform(selectedClip.transform);},[selectedClip?.id]);
-  function exportNotice(){setStatus("Export rendering is not ready yet. The timeline edits are real, but this build does not yet render a combined MP4/WebM sequence.");}
-  const homeTools=[[AudioLines,"Audio tools"],[Captions,"Captions"],[Image,"Photo tools"],[Mic,"Voiceover"],[Sparkles,"Effects"],[WandSparkles,"AI tools"]];
-  const editorTools=[[Settings2,"Edit"],[Crop,"Crop"],[Music2,"Audio"],[Type,"Text"],[Layers,"Layers"],[Captions,"Captions"]];
-  const currentIndex=videoClips.findIndex(c=>c.id===selectedClip?.id);
+    if(!playing&&Math.abs(video.currentTime-target)>.12){try{video.currentTime=target;}catch{}}
+    video.volume=clamp(selectedClip?.volume??volume,0,100)/100;
+    if(playing)video.play().catch(()=>setPlaying(false));else video.pause();
+  },[currentClip?.clip.id,currentAsset?.url,playing]);
+  useEffect(()=>{
+    audioClips.forEach(c=>{
+      const el=audioRefs.current[c.id];if(!el)return;
+      const start=c.startTime||0,end=start+c.duration,active=playhead>=start&&playhead<end;
+      el.volume=clamp(c.volume??100,0,100)/100;
+      if(playing&&active){
+        const target=c.sourceIn+(playhead-start);
+        if(Math.abs(el.currentTime-target)>.35){try{el.currentTime=target;}catch{}}
+        el.play().catch(()=>{});
+      }else el.pause();
+    });
+  },[playhead,playing,audioClips]);
+  useEffect(()=>{
+    if(!playing||currentAsset?.kind==="video")return;
+    const timer=setInterval(()=>setPlayhead(p=>{const next=p+.1;if(next>=totalDuration){setPlaying(false);return totalDuration;}return next;}),100);
+    return ()=>clearInterval(timer);
+  },[playing,currentAsset?.kind,totalDuration]);
+  function onVideoTime(){
+    const el=videoRef.current;if(!el||!currentClip)return;
+    const local=clamp(el.currentTime-currentClip.clip.sourceIn,0,currentClip.clip.duration);
+    setPlayhead(currentClip.start+local);
+    if(local>=currentClip.clip.duration-.04&&playing){
+      const next=currentClip.start+currentClip.clip.duration;
+      if(next>=totalDuration){setPlaying(false);setPlayhead(totalDuration);}
+      else setPlayhead(next);
+    }
+  }
+  function setCropValue(key,value){setCrop(old=>({...old,[key]:Number(value)}));}
+  function cropStyle(){
+    const c=crop;
+    return {clipPath:"inset("+c.top+"% "+c.right+"% "+c.bottom+"% "+c.left+"%)"};
+  }
+  function addText(){
+    remember();setShowCaption(true);setActiveTool("Text");setStatus("Text overlay added to the preview.");
+  }
 
+  async function exportProject(){
+    if(exporting)return;
+    if(!mainClips.length){setStatus("Add a video or photo before exporting.");return;}
+    if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){setStatus("This browser does not support in-browser video export. Try the latest Chrome.");return;}
+    setExporting(true);setStatus("Preparing your video export…");
+    let audioContext=null,recorder=null;
+    try{
+      const canvas=document.createElement("canvas");canvas.width=1280;canvas.height=720;
+      const ctx=canvas.getContext("2d");
+      const stream=canvas.captureStream(30);
+      const mime=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4"].find(t=>MediaRecorder.isTypeSupported(t))||"";
+      audioContext=new AudioContext();
+      const audioOut=audioContext.createMediaStreamDestination();
+      const chunks=[];
+      const combined=new MediaStream([...stream.getVideoTracks(),...audioOut.stream.getAudioTracks()]);
+      recorder=new MediaRecorder(combined,mime?{mimeType:mime,videoBitsPerSecond:8000000}:undefined);
+      const finished=new Promise((resolve,reject)=>{recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};recorder.onerror=()=>reject(new Error("The browser stopped recording the export."));recorder.onstop=()=>resolve();});
+      await audioContext.resume();
+      const audioElements=[];
+      for(const ac of audioClips){
+        const asset=assets.find(a=>a.id===ac.assetId);if(!asset)continue;
+        const audio=document.createElement("audio");audio.src=asset.url;audio.preload="auto";audio.volume=clamp(ac.volume??100,0,100)/100;
+        const source=audioContext.createMediaElementSource(audio);source.connect(audioOut);
+        audioElements.push({audio,clip:ac,source});
+      }
+      const drawFrame=(source,transformData)=>{
+        ctx.fillStyle="#000";ctx.fillRect(0,0,1280,720);
+        const w=source.videoWidth||source.naturalWidth||1280,h=source.videoHeight||source.naturalHeight||720;
+        const scale=Math.min(1280/w,720/h)*(transformData?.scale||1);
+        const dw=w*scale,dh=h*scale;
+        ctx.save();ctx.translate(640+(transformData?.x||0)*2,360+(transformData?.y||0)*2);ctx.rotate((transformData?.rotation||0)*Math.PI/180);
+        ctx.drawImage(source,-dw/2,-dh/2,dw,dh);ctx.restore();
+        if(showCaption){ctx.font="bold 46px Arial";ctx.textAlign="center";ctx.lineWidth=5;ctx.strokeStyle="#000";ctx.fillStyle="#fff";ctx.strokeText(caption,640,650,1150);ctx.fillText(caption,640,650,1150);}
+      };
+      const drawStill=(source,transformData,duration)=>{
+        return new Promise(resolve=>{
+          const started=performance.now();
+          const tick=now=>{drawFrame(source,transformData);if(now-started<duration*1000)requestAnimationFrame(tick);else resolve();};
+          requestAnimationFrame(tick);
+        });
+      };
+      const videoElements=[];
+      recorder.start(250);
+      for(const c of mainClips){
+        const asset=assets.find(a=>a.id===c.assetId);if(!asset)continue;
+        if(c.kind==="image"){
+          const img=new window.Image();img.src=asset.url;
+          await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error("Could not load "+asset.name));});
+          await drawStill(img,c.transform,c.duration);
+        }else{
+          const video=document.createElement("video");video.src=asset.url;video.playsInline=true;video.preload="auto";video.volume=clamp(c.volume??100,0,100)/100;
+          await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error("Could not load "+asset.name));});
+          video.currentTime=c.sourceIn;
+          await new Promise(resolve=>{video.onseeked=resolve;setTimeout(resolve,1500);});
+          const source=audioContext.createMediaElementSource(video);source.connect(audioOut);videoElements.push(video);
+          await video.play();
+          await new Promise(resolve=>{
+            const start=performance.now();
+            const tick=()=>{
+              drawFrame(video,c.transform);
+              const elapsed=(performance.now()-start)/1000;
+              if(elapsed>=c.duration||video.ended){video.pause();resolve();}else requestAnimationFrame(tick);
+            };requestAnimationFrame(tick);
+          });
+        }
+      }
+      audioElements.forEach(({audio,clip})=>{
+        const at=Math.max(0,clip.startTime||0);
+        const delay=Math.max(0,at);
+        setTimeout(()=>{try{audio.currentTime=clip.sourceIn||0;audio.play();setTimeout(()=>audio.pause(),clip.duration*1000);}catch{}},delay*1000);
+      });
+      // Keep the recorder alive through any audio tail after the picture ends.
+      const audioTail=Math.max(0,...audioClips.map(c=>(c.startTime||0)+c.duration))-mainDuration;
+      if(audioTail>0)await new Promise(resolve=>setTimeout(resolve,audioTail*1000));
+      recorder.stop();await finished;
+      const type=recorder.mimeType||"video/webm";
+      const blob=new Blob(chunks,{type});
+      if(!blob.size)throw new Error("The export file was empty. Please try a shorter clip.");
+      const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=(projectName||"plus-editor").replace(/[^\w-]+/g,"-")+(type.includes("mp4")?".mp4":".webm");document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+      setStatus("Export complete. Your video has been downloaded.");
+      videoElements.forEach(v=>{v.pause();v.removeAttribute("src");});
+      audioElements.forEach(({audio})=>{audio.pause();audio.removeAttribute("src");});
+    }catch(error){
+      try{if(recorder&&recorder.state!=="inactive")recorder.stop();}catch{}
+      setStatus("Export failed: "+(error?.message||"unsupported media format"));
+    }finally{
+      try{await audioContext?.close();}catch{}
+      setExporting(false);
+    }
+  }
+
+  const editorTools=[[Settings2,"Edit"],[Crop,"Crop"],[Music2,"Audio"],[Type,"Text"],[Layers,"Layers"],[Captions,"Captions"]];
   if(screen==="home")return <div className="mobile-app home-screen">
     <input ref={inputRef} hidden type="file" multiple onChange={e=>addImported(e.target.files)}/>
     <section className="home-hero"><div className="home-top"><div className="brand-lockup"><span className="plus-mark"><i></i><i></i></span><span><b>PLUS</b><small>EDITOR</small></span></div><button className="round-search" onClick={()=>setScreen("library")}><Search/></button></div>
       <div className="hero-copy"><span>MAKE SOMETHING YOURS</span><h1>Your next edit starts here.</h1><p>A focused creative workspace. Built around your ideas, not someone else's interface.</p></div>
-      <div className="create-cards"><button className="create-card new-video" onClick={startNew}><span className="create-icon"><Plus/></span><b>New project</b><small>Bring your footage together</small></button><button className="create-card edit-photo" onClick={()=>{setGalleryTab("Photos");setScreen("gallery");}}><span className="create-icon"><Image/></span><b>Edit photo</b><small>Work with a still image</small></button></div>
+      <div className="create-cards"><button className="create-card new-video" onClick={startNew}><span className="create-icon"><Plus/></span><b>New project</b><small>Choose videos, photos or audio</small></button><button className="create-card edit-photo" onClick={()=>chooseMedia("photo")}><span className="create-icon"><Image/></span><b>Edit photo</b><small>Start with an image</small></button></div>
     </section>
-    <section className="home-content"><div className="recent-heading"><b>Creative tools</b><span>THE PLUS WORKSPACE</span></div><div className="home-tools">{homeTools.map(([Icon,label])=><button key={label} className="home-tool" onClick={()=>{setActiveTool(label==="Audio tools"?"Audio":label==="Captions"?"Captions":label==="Photo tools"?"Crop":label);startNew();}}><Icon/><b>{label}</b></button>)}</div><div className="home-note"><b>Made to move with you.</b><p>Import from your phone, shape the timeline, and make every cut count.</p></div></section>
+    <section className="home-content"><div className="recent-heading"><b>Creative tools</b><span>THE PLUS WORKSPACE</span></div><div className="home-tools">{[[AudioLines,"Audio tools"],[Captions,"Captions"],[Image,"Photo tools"],[Mic,"Voiceover"],[Sparkles,"Effects"],[WandSparkles,"AI tools"]].map(([Icon,label])=><button key={label} className="home-tool" onClick={()=>{setActiveTool(label==="Audio tools"?"Audio":label==="Captions"?"Captions":label==="Photo tools"?"Crop":label);startNew();}}><Icon/><b>{label}</b></button>)}</div><div className="home-note"><b>Made to move with you.</b><p>Import from your phone, shape the timeline, and make every cut count.</p></div></section>
     <nav className="home-nav"><button className="active"><Film/>Create</button><button onClick={()=>setScreen("library")}><Folder/>Projects</button><button onClick={startNew}><Plus/>New</button></nav>
   </div>;
 
-  if(screen==="gallery")return <div className="mobile-app gallery-screen">
-    <input ref={inputRef} hidden type="file" multiple onChange={e=>addImported(e.target.files)}/>
-    <header className="gallery-header"><button onClick={()=>setScreen("home")}><X/></button><b>Import media</b><span>PLUS EDITOR</span></header>
-    <div className="gallery-tabs"><button className={galleryTab==="Videos"?"active":""} onClick={()=>setGalleryTab("Videos")}>Videos</button><button className={galleryTab==="Photos"?"active":""} onClick={()=>setGalleryTab("Photos")}>Photos</button><button onClick={()=>chooseMedia("audio")}>Audio</button></div>
-    <div className="gallery-empty"><div className="gallery-empty-icon"><ImagePlus/></div><h2>Choose from your gallery</h2><p>Pick the videos, photos or audio you want to edit. PLUS EDITOR only receives the files you choose.</p><button className="cyan-button" onClick={()=>chooseMedia(galleryTab==="Photos"?"photo":"video")}>Open phone gallery</button><button className="browse-all" onClick={()=>chooseMedia("all")}>Browse any media file</button></div>
-  </div>;
-
-  if(screen==="library")return <div className="mobile-app feature-screen"><header><button onClick={()=>setScreen("home")}><ArrowLeft/></button><b>PLUS EDITOR · Projects</b></header><div className="feature-coming"><Folder/><h1>Your workspace</h1><p>Project saving and reopening will be added after the editing engine is stable.</p><button className="cyan-button" onClick={startNew}>Create a project</button></div></div>;
+  if(screen==="library")return <div className="mobile-app feature-screen"><header><button onClick={()=>setScreen("home")}><ArrowLeft/></button><b>PLUS EDITOR · Projects</b></header><div className="feature-coming"><Folder/><h1>Your workspace</h1><p>Project saving and reopening is not available yet.</p><button className="cyan-button" onClick={startNew}>Create a project</button></div></div>;
 
   return <div className="mobile-app editor-screen">
     <input ref={inputRef} hidden type="file" multiple onChange={e=>addImported(e.target.files)}/>
-    <header className="editor-header"><button onClick={()=>setScreen("home")}><X/></button><button className="project-title" onClick={()=>{const n=window.prompt("Project name",projectName);if(n)setProjectName(n);}}>{projectName}<ChevronDown size={14}/></button><button className="editor-export" onClick={exportNotice}><Download size={15}/> Export</button></header>
+    <header className="editor-header"><button onClick={()=>{setPlaying(false);setScreen("home");}}><X/></button><button className="project-title" onClick={()=>{const n=window.prompt("Project name",projectName);if(n)setProjectName(n);}}>{projectName}<ChevronDown size={14}/></button><button className="history-button" disabled={!canUndo} onClick={undo}><Undo2/></button><button className="history-button" disabled={!canRedo} onClick={redo}><Redo2/></button><button className="editor-export" disabled={exporting} onClick={exportProject}><Download size={15}/>{exporting?"Exporting…":"Export"}</button></header>
     <section className="editor-preview"><div className="preview-canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
-      {currentAsset?.kind==="video"?<video ref={videoRef} key={currentClip?.clip.id} src={currentAsset.url} playsInline muted={volume===0} onLoadedMetadata={e=>{const c=currentClip?.clip;if(c&&c.sourceOut<=0){const d=e.target.duration||5;updateClip(c.id,{sourceOut:d,duration:Math.max(.05,d-c.sourceIn)});}}} style={{objectFit:fit,transform:"translate(calc(-50% + "+transform.x+"px),calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}}/>:
-      currentAsset?.kind==="image"?<img src={currentAsset.url} alt="" style={{objectFit:fit,transform:"translate(calc(-50% + "+transform.x+"px),calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}}/>:
+      {currentAsset?.kind==="video"?<video ref={videoRef} key={currentClip?.clip.id} src={currentAsset.url} playsInline onTimeUpdate={onVideoTime} onEnded={()=>{if(currentClip){const next=currentClip.start+currentClip.clip.duration;if(next<totalDuration)setPlayhead(next);else setPlaying(false);}}} style={{objectFit:fit,clipPath:"inset("+crop.top+"% "+crop.right+"% "+crop.bottom+"% "+crop.left+"%)",transform:"translate(calc(-50% + "+transform.x+"px),calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}}/>:
+      currentAsset?.kind==="image"?<img src={currentAsset.url} alt="" style={{objectFit:fit,clipPath:"inset("+crop.top+"% "+crop.right+"% "+crop.bottom+"% "+crop.left+"%)",transform:"translate(calc(-50% + "+transform.x+"px),calc(-50% + "+transform.y+"px)) scale("+transform.scale+") rotate("+transform.rotation+"deg)"}}/>:
       <div className="preview-placeholder"><Film/><b>{clips.length?"Select a video or photo clip":"Your preview will appear here"}</b><span>Import media to begin editing</span><button className="cyan-button" onClick={()=>chooseMedia("all")}>Import media</button></div>}
       {showCaption&&<div className="caption-overlay">{caption}</div>}
       {currentAsset&&<div className="canvas-hud">DRAG TO POSITION</div>}
     </div></section>
-    <div className="player-controls"><button onClick={()=>setFit(fit==="contain"?"cover":"contain")} title="Toggle fit / fill"><Crop/></button><button className="play-main" onClick={()=>setPlaying(p=>!p)}>{playing?<Pause/>:<Play/>}</button><button onClick={()=>seekTo(Math.max(0,playhead-1))}><Undo2/></button><button onClick={()=>seekTo(Math.min(totalDuration,playhead+1))}><ChevronRight/></button></div>
+    <div className="player-controls"><button onClick={()=>setActiveTool("Crop")} title="Crop"><Crop/></button><button className="play-main" onClick={()=>setPlaying(p=>!p)}>{playing?<Pause/>:<Play/>}</button><button onClick={undo} disabled={!canUndo} title="Undo"><Undo2/></button><button onClick={redo} disabled={!canRedo} title="Redo"><Redo2/></button><button onClick={()=>splitSelected()} title="Split clip"><Scissors/></button></div>
     <section className="timeline-area">
-      <div className="timeline-top"><b>{fmt(playhead)} <span>/ {fmt(totalDuration)}</span></b><div className="timeline-actions"><button onClick={()=>setZoom(z=>clamp(z-8,16,120))}><ZoomOut/></button><input aria-label="Timeline zoom" type="range" min="16" max="120" value={zoom} onChange={e=>setZoom(+e.target.value)}/><button onClick={()=>setZoom(z=>clamp(z+8,16,120))}><ZoomIn/></button></div></div>
-      <div className="timeline-scroll" ref={timelineRef} onPointerDown={onTimelinePointer}>
-        <div className="timeline-ruler" style={{width:timelineWidth}}>{Array.from({length:Math.ceil(totalDuration)+2},(_,i)=><span key={i} style={{left:i*pxPerSec}}>{fmt(i)}</span>)}</div>
-        <div className="track-label"><b>VIDEO</b><button onClick={()=>chooseMedia("video")}><Plus/></button></div>
-        <div className="track-lane" style={{width:timelineWidth}}>{videoClips.map((c,i)=>{const left=videoClips.slice(0,i).reduce((n,x)=>n+x.duration,0);return <div key={c.id} draggable onDragStart={e=>onClipDragStart(e,c.id)} onDragOver={e=>e.preventDefault()} onDrop={e=>onClipDrop(e,c.id)} className={"timeline-clip "+(selected===c.id?"selected":"")} style={{left:left*pxPerSec,width:Math.max(38,c.duration*pxPerSec)}} onClick={e=>{e.stopPropagation();setSelected(c.id);seekTo(left);}}>
-          <button className="trim-handle left" title="Trim start" onClick={e=>{e.stopPropagation();trimClip(c.id,"left",0.5);}}></button><div className="clip-visual"><span>{c.kind==="audio"?<AudioLines/>:<Film/>}</span><b>{c.name}</b></div><button className="trim-handle right" title="Trim end" onClick={e=>{e.stopPropagation();trimClip(c.id,"right",0.5);}}></button>
-        </div>;})}</div>
-        <div className="track-label"><b>AUDIO</b><button onClick={()=>chooseMedia("audio")}><Plus/></button></div>
-        <div className="track-lane audio-lane" style={{width:timelineWidth}}>{audioClips.map((c,i)=><div key={c.id} className={"timeline-clip audio-clip "+(selected===c.id?"selected":"")} style={{left:audioClips.slice(0,i).reduce((n,x)=>n+x.duration,0)*pxPerSec,width:Math.max(90,c.duration*pxPerSec)}} onClick={e=>{e.stopPropagation();setSelected(c.id);}}><AudioLines/><b>{c.name}</b></div>)}<span className="lane-hint">Add a music track or voice recording</span></div>
-        <div className="track-label"><b>TEXT</b><button onClick={()=>{setShowCaption(true);setActiveTool("Text");}}><Plus/></button></div>
-        <div className="track-lane text-lane" style={{width:timelineWidth}}>{showCaption?<div className="timeline-clip text-clip" style={{left:0,width:Math.max(100,totalDuration*pxPerSec)}} onClick={()=>setActiveTool("Text")}><Type/><b>{caption}</b></div>:<span className="lane-hint">Add titles and captions</span>}</div>
-        <div className="playhead-line" style={{left:playhead*pxPerSec}}><i/></div>
+      <div className="timeline-top"><b>{fmt(playhead)} <span>/ {fmt(totalDuration)}</span></b><div className="timeline-actions"><button onClick={()=>setZoom(z=>clamp(z-8,16,140))}><ZoomOut/></button><input aria-label="Timeline zoom" type="range" min="16" max="140" value={zoom} onChange={e=>setZoom(+e.target.value)}/><button onClick={()=>setZoom(z=>clamp(z+8,16,140))}><ZoomIn/></button></div></div>
+      <div className="timeline-scroll" ref={timelineRef} onPointerDown={onTimelineBackground}>
+        <div className="timeline-content" style={{width:timelineWidth}}>
+          <div className="timeline-ruler">{Array.from({length:Math.ceil(totalDuration)+2},(_,i)=><span key={i} style={{left:i*pxPerSec}}>{fmt(i)}</span>)}</div>
+          <div className="track-row"><div className="track-label"><b>VIDEO</b><button onClick={()=>chooseMedia("video")}><Plus/></button></div><div className="track-lane">{mainClips.map(c=>{const left=clipStart(c.id);return <div key={c.id} className={"timeline-clip "+(selected===c.id?"selected":"")} style={{left:left*pxPerSec,width:Math.max(42,c.duration*pxPerSec)}} onPointerDown={e=>beginClipDrag(e,c.id)} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} onPointerCancel={endClipPointer}><button className="trim-handle left" onPointerDown={e=>beginClipDrag(e,c.id,"trim-left")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} title="Drag to trim start"/><div className="clip-visual"><span><Film/></span><b>{c.name}</b></div><button className="trim-handle right" onPointerDown={e=>beginClipDrag(e,c.id,"trim-right")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} title="Drag to trim end"/></div>;})}</div></div>
+          <div className="track-row"><div className="track-label"><b>AUDIO</b><button onClick={()=>chooseMedia("audio")}><Plus/></button></div><div className="track-lane audio-lane">{audioClips.map(c=><div key={c.id} className={"timeline-clip audio-clip "+(selected===c.id?"selected":"")} style={{left:(c.startTime||0)*pxPerSec,width:Math.max(70,c.duration*pxPerSec)}} onPointerDown={e=>beginClipDrag(e,c.id)} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} onPointerCancel={endClipPointer}><AudioLines/><b>{c.name}</b><button className="trim-handle left" onPointerDown={e=>beginClipDrag(e,c.id,"trim-left")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer}/><button className="trim-handle right" onPointerDown={e=>beginClipDrag(e,c.id,"trim-right")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer}/></div>)}{audioClips.length===0&&<span className="lane-hint">Import music or voiceover</span>}</div></div>
+          <div className="track-row"><div className="track-label"><b>TEXT</b><button onClick={addText}><Plus/></button></div><div className="track-lane text-lane">{showCaption?<div className="timeline-clip text-clip" style={{left:0,width:Math.max(100,mainDuration*pxPerSec)}} onClick={e=>{e.stopPropagation();setActiveTool("Text");}}><Type/><b>{caption}</b></div>:<span className="lane-hint">Add titles and captions</span>}</div></div>
+          <div className="playhead-line" style={{left:playhead*pxPerSec}}><i/></div>
+        </div>
       </div>
     </section>
     <section className="tool-drawer">
-      {activeTool==="Crop"?<div className="tool-detail"><label>Frame</label><button onClick={()=>setFit("contain")}>Fit</button><button onClick={()=>setFit("cover")}>Fill / Crop</button><button onClick={()=>setFit("contain")}>Reset crop</button></div>:
-      activeTool==="Text"?<div className="tool-detail"><label>Text</label><input value={caption} onChange={e=>setCaption(e.target.value)}/><button onClick={()=>setShowCaption(true)}>Apply</button></div>:
-      activeTool==="Audio"?<div className="tool-detail"><label>Volume {volume}%</label><input type="range" min="0" max="100" value={volume} onChange={e=>setVolume(+e.target.value)}/><button onClick={()=>chooseMedia("audio")}>Import audio</button></div>:
-      activeTool==="Captions"?<div className="tool-detail"><p>Caption editor is planned. Automatic speech recognition is not included yet.</p></div>:
-      activeTool==="Layers"?<div className="tool-detail"><p>Video, audio and text lanes are separate. Overlay compositing is next.</p></div>:
-      <div className="tool-detail transform-controls"><div className="transform-row"><label>Scale</label><input type="range" min=".25" max="3" step=".01" value={transform.scale} onChange={e=>setTransformValue("scale",e.target.value)}/><b>{Math.round(transform.scale*100)}%</b></div><div className="transform-row"><label>Rotate</label><input type="range" min="-180" max="180" value={transform.rotation} onChange={e=>setTransformValue("rotation",e.target.value)}/><b>{transform.rotation}°</b></div><div className="transform-actions"><button onClick={()=>setTransformValue("rotation",0)}><RotateCcw/> Reset</button><button onClick={splitSelected}><Scissors/> Split at playhead</button><button onClick={()=>selectedClip&&removeClip(selectedClip.id)}><Trash2/> Delete</button></div><div className="transform-actions"><button onClick={()=>selectedClip&&moveClip(selectedClip.id,-1)}>Move left</button><button onClick={()=>selectedClip&&moveClip(selectedClip.id,1)}>Move right</button><button onClick={()=>selectedClip&&trimClip(selectedClip.id,"left",.5)}>Trim start −0.5s</button><button onClick={()=>selectedClip&&trimClip(selectedClip.id,"right",.5)}>Trim end −0.5s</button></div></div>}
+      {activeTool==="Crop"?<div className="tool-detail crop-controls"><div className="crop-row"><label>Top</label><input type="range" min="0" max="45" value={crop.top} onChange={e=>setCropValue("top",e.target.value)}/><b>{crop.top}%</b></div><div className="crop-row"><label>Right</label><input type="range" min="0" max="45" value={crop.right} onChange={e=>setCropValue("right",e.target.value)}/><b>{crop.right}%</b></div><div className="crop-row"><label>Bottom</label><input type="range" min="0" max="45" value={crop.bottom} onChange={e=>setCropValue("bottom",e.target.value)}/><b>{crop.bottom}%</b></div><div className="crop-row"><label>Left</label><input type="range" min="0" max="45" value={crop.left} onChange={e=>setCropValue("left",e.target.value)}/><b>{crop.left}%</b></div><div className="transform-actions"><button onClick={()=>{setCrop({top:0,right:0,bottom:0,left:0});setFit("contain");}}>Reset crop</button><button onClick={()=>setFit("cover")}>Fill frame</button><button onClick={()=>setFit("contain")}>Fit frame</button></div></div>:
+      activeTool==="Text"?<div className="tool-detail"><label>Text overlay</label><input value={caption} onChange={e=>setCaption(e.target.value)}/><button onClick={()=>{setShowCaption(true);setStatus("Text updated.");}}>Apply</button><button onClick={()=>setShowCaption(false)}>Hide</button></div>:
+      activeTool==="Audio"?<div className="tool-detail"><label>Selected volume {selectedClip?.volume??volume}%</label><input type="range" min="0" max="100" value={selectedClip?.volume??volume} onChange={e=>selectedClip?updateClip(selectedClip.id,{volume:+e.target.value}):setVolume(+e.target.value)}/><button onClick={()=>chooseMedia("audio")}>Import audio</button></div>:
+      activeTool==="Captions"?<div className="tool-detail"><p>Manual captions are available in Text. Automatic speech recognition is not connected yet.</p><button onClick={()=>setActiveTool("Text")}>Open text editor</button></div>:
+      activeTool==="Layers"?<div className="tool-detail"><p>Separate video, audio and text tracks are shown in the timeline. Extra video overlay tracks are not available yet.</p></div>:
+      <div className="tool-detail transform-controls"><div className="transform-row"><label>Scale</label><input type="range" min=".25" max="3" step=".01" value={transform.scale} onChange={e=>setTransformValue("scale",e.target.value)}/><b>{Math.round(transform.scale*100)}%</b></div><div className="transform-row"><label>Rotate</label><input type="range" min="-180" max="180" value={transform.rotation} onChange={e=>setTransformValue("rotation",e.target.value)}/><b>{transform.rotation}°</b></div><div className="transform-actions"><button onClick={()=>setTransformValue("rotation",0)}><RotateCcw/> Reset</button><button onClick={splitSelected}><Scissors/> Split</button><button onClick={()=>selectedClip&&removeClip(selectedClip.id)}><Trash2/> Delete</button></div></div>}
       <nav className="editor-toolbar">{editorTools.map(([Icon,label])=><button key={label} className={activeTool===label?"active":""} onClick={()=>setActiveTool(label)}><Icon/><span>{label}</span></button>)}</nav>
     </section>
-    <div className="editor-status">{status}</div>
+    <div className="editor-status">{exporting?"Rendering video…":status}</div>
+    {audioClips.map(c=>{const a=assets.find(x=>x.id===c.assetId);return a?<audio key={c.id} ref={el=>{if(el)audioRefs.current[c.id]=el;else delete audioRefs.current[c.id];}} src={a.url} preload="auto"/>:null;})}
   </div>;
 }
 createRoot(document.getElementById("root")).render(<App/>);
