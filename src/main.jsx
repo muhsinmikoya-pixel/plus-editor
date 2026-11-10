@@ -178,6 +178,7 @@ function App(){
     dragRef.current={id,mode,pointerId:e.pointerId,startX:e.clientX,base:copyState(clip),moved:false};
     if(mode!=="move")remember();
     setSelected(id);
+    if(mode==="move"){if(clip.kind==="audio")setPlayhead(clip.startTime||0);else setPlayhead(clipStart(id));}
   }
   function moveClipPointer(e){
     const d=dragRef.current;if(!d||d.pointerId!==e.pointerId)return;
@@ -363,7 +364,7 @@ function App(){
       <div className="hero-copy"><span>MAKE SOMETHING YOURS</span><h1>Your next edit starts here.</h1><p>A focused creative workspace. Built around your ideas, not someone else's interface.</p></div>
       <div className="create-cards"><button className="create-card new-video" onClick={startNew}><span className="create-icon"><Plus/></span><b>New project</b><small>Choose videos, photos or audio</small></button><button className="create-card edit-photo" onClick={()=>chooseMedia("photo")}><span className="create-icon"><Image/></span><b>Edit photo</b><small>Start with an image</small></button></div>
     </section>
-    <section className="home-content"><div className="recent-heading"><b>Creative tools</b><span>THE PLUS WORKSPACE</span></div><div className="home-tools">{[[AudioLines,"Audio tools"],[Captions,"Captions"],[Image,"Photo tools"],[Mic,"Voiceover"],[Sparkles,"Effects"],[WandSparkles,"AI tools"]].map(([Icon,label])=><button key={label} className="home-tool" onClick={()=>{setActiveTool(label==="Audio tools"?"Audio":label==="Captions"?"Captions":label==="Photo tools"?"Crop":label);startNew();}}><Icon/><b>{label}</b></button>)}</div><div className="home-note"><b>Made to move with you.</b><p>Import from your phone, shape the timeline, and make every cut count.</p></div></section>
+    <section className="home-content"><div className="recent-heading"><b>Creative tools</b><span>THE PLUS WORKSPACE</span></div><div className="home-tools">{[[AudioLines,"Audio tools","Audio"],[Captions,"Text & captions","Text"],[Image,"Crop tools","Crop"]].map(([Icon,label,tool])=><button key={label} className="home-tool" onClick={()=>{setActiveTool(tool);startNew();}}><Icon/><b>{label}</b></button>)}</div><div className="home-note"><b>Made to move with you.</b><p>Import from your phone, shape the timeline, and make every cut count.</p></div></section>
     <nav className="home-nav"><button className="active"><Film/>Create</button><button onClick={()=>setScreen("library")}><Folder/>Projects</button><button onClick={startNew}><Plus/>New</button></nav>
   </div>;
 
