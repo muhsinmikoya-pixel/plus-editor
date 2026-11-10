@@ -111,11 +111,26 @@ function App(){
     // The native Android/iOS file picker is opened directly from this tap.
     chooseMedia("all");
   }
-  function makeThumbnail(asset){
-    const el=document.createElement("video");el.muted=true;el.playsInline=true;el.preload="metadata";el.src=asset.url;
-    el.onloadedmetadata=()=>{try{el.currentTime=Math.min(.25,Math.max(0,el.duration/3));}catch{}};
-    el.onseeked=()=>{try{const canvas=document.createElement("canvas");canvas.width=240;canvas.height=135;canvas.getContext("2d").drawImage(el,0,0,240,135);const thumb=canvas.toDataURL("image/jpeg",.72);setAssets(old=>old.map(a=>a.id===asset.id?{...a,thumb}:a));}catch{}el.removeAttribute("src");el.load();};
-    el.onerror=()=>{el.removeAttribute("src");el.load();};
+  async function makeThumbnail(asset){
+    const el=document.createElement("video");
+    el.muted=true;el.playsInline=true;el.preload="auto";el.src=asset.url;
+    const cleanup=()=>{el.removeAttribute("src");el.load();};
+    try{
+      await new Promise((resolve,reject)=>{el.onloadedmetadata=resolve;el.onerror=()=>reject(new Error("Video preview unavailable"));});
+      const duration=Number.isFinite(el.duration)?el.duration:0;
+      const count=Math.max(1,Math.min(180,Math.ceil(duration)));
+      const canvas=document.createElement("canvas");canvas.width=160;canvas.height=90;
+      const ctx=canvas.getContext("2d");const frames=[];
+      for(let i=0;i<count;i++){
+        const time=Math.min(Math.max(0,duration-.04),i+.12);
+        if(Math.abs(el.currentTime-time)>.015){
+          await new Promise(resolve=>{el.onseeked=resolve;el.currentTime=time;});
+        }
+        try{ctx.drawImage(el,0,0,canvas.width,canvas.height);frames.push(canvas.toDataURL("image/jpeg",.62));}catch{}
+      }
+      if(frames.length)setAssets(old=>old.map(a=>a.id===asset.id?{...a,thumb:frames[0],thumbnails:frames}:a));
+    }catch{setStatus("Could not generate video timeline thumbnails for "+asset.name+".");}
+    finally{cleanup();}
   }
   function probeDuration(asset){
     if(asset.kind==="image")return;
@@ -450,7 +465,7 @@ function App(){
       <div className="timeline-scroll" ref={timelineRef} onPointerDown={onTimelineBackground}>
         <div className="timeline-content" style={{width:timelineWidth}}>
           <div className="timeline-ruler">{Array.from({length:Math.ceil(totalDuration)+2},(_,i)=><span key={i} style={{left:i*pxPerSec}}>{fmt(i)}</span>)}</div>
-          <div className="track-row"><div className="track-label"><b>VIDEO</b><button onClick={()=>chooseMedia("video")}><Plus/></button></div><div className="track-lane">{mainClips.map(c=>{const left=clipStart(c.id);return <div key={c.id} className={"timeline-clip "+(selected===c.id?"selected":"")} style={{left:left*pxPerSec,width:Math.max(42,c.duration*pxPerSec)}} onPointerDown={e=>beginClipDrag(e,c.id)} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} onPointerCancel={endClipPointer}><button className="trim-handle left" onPointerDown={e=>beginClipDrag(e,c.id,"trim-left")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} title="Drag to trim start"/><div className="clip-visual">{(assets.find(a=>a.id===c.assetId)?.thumb||assets.find(a=>a.id===c.assetId)?.kind==="image")?<img src={assets.find(a=>a.id===c.assetId)?.thumb||assets.find(a=>a.id===c.assetId)?.url} alt=""/>:<span><Film/></span>}<b>{c.name}</b></div><button className="trim-handle right" onPointerDown={e=>beginClipDrag(e,c.id,"trim-right")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} title="Drag to trim end"/></div>;})}</div></div>
+          <div className="track-row"><div className="track-label"><b>VIDEO</b><button onClick={()=>chooseMedia("video")}><Plus/></button></div><div className="track-lane">{mainClips.map(c=>{const left=clipStart(c.id);return <div key={c.id} className={"timeline-clip "+(selected===c.id?"selected":"")} style={{left:left*pxPerSec,width:Math.max(42,c.duration*pxPerSec)}} onPointerDown={e=>beginClipDrag(e,c.id)} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} onPointerCancel={endClipPointer}><button className="trim-handle left" onPointerDown={e=>beginClipDrag(e,c.id,"trim-left")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} title="Drag to trim start"/><div className="clip-visual">{(()=>{const asset=assets.find(a=>a.id===c.assetId);if(asset?.kind==="video"&&asset.thumbnails?.length){const first=Math.max(0,Math.floor(c.sourceIn||0));const last=Math.max(first+1,Math.ceil(c.sourceOut||c.duration));const frames=asset.thumbnails.slice(first,last);return <div className="clip-filmstrip">{(frames.length?frames:[asset.thumbnails[0]]).map((src,i)=><img className="film-frame" key={i} src={src} alt=""/> )}</div>;}if(asset?.kind==="image")return <img src={asset.url} alt=""/>;return <span><Film/></span>;})()}<b>{c.name}</b></div><button className="trim-handle right" onPointerDown={e=>beginClipDrag(e,c.id,"trim-right")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} title="Drag to trim end"/></div>;})}</div></div>
           <div className="track-row"><div className="track-label"><b>AUDIO</b><button onClick={()=>chooseMedia("audio")}><Plus/></button></div><div className="track-lane audio-lane">{audioClips.map(c=><div key={c.id} className={"timeline-clip audio-clip "+(selected===c.id?"selected":"")} style={{left:(c.startTime||0)*pxPerSec,width:Math.max(70,c.duration*pxPerSec)}} onPointerDown={e=>beginClipDrag(e,c.id)} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} onPointerCancel={endClipPointer}><AudioLines/><b>{c.name}</b><button className="trim-handle left" onPointerDown={e=>beginClipDrag(e,c.id,"trim-left")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer}/><button className="trim-handle right" onPointerDown={e=>beginClipDrag(e,c.id,"trim-right")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer}/></div>)}{audioClips.length===0&&<span className="lane-hint">Import music or voiceover</span>}</div></div>
           <div className="track-row"><div className="track-label"><b>TEXT</b><button onClick={addText}><Plus/></button></div><div className="track-lane text-lane">{showCaption?<div className="timeline-clip text-clip" style={{left:0,width:Math.max(100,mainDuration*pxPerSec)}} onClick={e=>{e.stopPropagation();setActiveTool("Text");}}><Type/><b>{caption}</b></div>:<span className="lane-hint">Add titles and captions</span>}</div></div>
           <div className="playhead-line" style={{left:playhead*pxPerSec-7}} onPointerDown={beginPlayheadDrag} onPointerMove={movePlayheadDrag} onPointerUp={endPlayheadDrag} onPointerCancel={endPlayheadDrag}><i/><span/></div>
