@@ -176,6 +176,18 @@ function App(){
     for(const c of mainClips){if(t>=start&&t<start+c.duration){found=c;break;}start+=c.duration;}
     if(found)setSelected(found.id);
   }
+  function beginPlayheadDrag(e){
+    e.stopPropagation();e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current={mode:"playhead",pointerId:e.pointerId};
+  }
+  function movePlayheadDrag(e){
+    const d=dragRef.current;if(!d||d.mode!=="playhead"||d.pointerId!==e.pointerId)return;
+    const el=timelineRef.current;if(!el)return;const rect=el.getBoundingClientRect();
+    seekTo((e.clientX-rect.left+el.scrollLeft)/pxPerSec);
+  }
+  function endPlayheadDrag(e){
+    if(dragRef.current?.mode==="playhead"&&dragRef.current.pointerId===e.pointerId)dragRef.current=null;
+  }
   function onTimelineBackground(e){
     if(dragRef.current)return;
     if(e.target.closest(".timeline-clip")||e.target.closest("button"))return;
@@ -411,7 +423,7 @@ function App(){
           <div className="track-row"><div className="track-label"><b>VIDEO</b><button onClick={()=>chooseMedia("video")}><Plus/></button></div><div className="track-lane">{mainClips.map(c=>{const left=clipStart(c.id);return <div key={c.id} className={"timeline-clip "+(selected===c.id?"selected":"")} style={{left:left*pxPerSec,width:Math.max(42,c.duration*pxPerSec)}} onPointerDown={e=>beginClipDrag(e,c.id)} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} onPointerCancel={endClipPointer}><button className="trim-handle left" onPointerDown={e=>beginClipDrag(e,c.id,"trim-left")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} title="Drag to trim start"/><div className="clip-visual">{(assets.find(a=>a.id===c.assetId)?.thumb||assets.find(a=>a.id===c.assetId)?.kind==="image")?<img src={assets.find(a=>a.id===c.assetId)?.thumb||assets.find(a=>a.id===c.assetId)?.url} alt=""/>:<span><Film/></span>}<b>{c.name}</b></div><button className="trim-handle right" onPointerDown={e=>beginClipDrag(e,c.id,"trim-right")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} title="Drag to trim end"/></div>;})}</div></div>
           <div className="track-row"><div className="track-label"><b>AUDIO</b><button onClick={()=>chooseMedia("audio")}><Plus/></button></div><div className="track-lane audio-lane">{audioClips.map(c=><div key={c.id} className={"timeline-clip audio-clip "+(selected===c.id?"selected":"")} style={{left:(c.startTime||0)*pxPerSec,width:Math.max(70,c.duration*pxPerSec)}} onPointerDown={e=>beginClipDrag(e,c.id)} onPointerMove={moveClipPointer} onPointerUp={endClipPointer} onPointerCancel={endClipPointer}><AudioLines/><b>{c.name}</b><button className="trim-handle left" onPointerDown={e=>beginClipDrag(e,c.id,"trim-left")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer}/><button className="trim-handle right" onPointerDown={e=>beginClipDrag(e,c.id,"trim-right")} onPointerMove={moveClipPointer} onPointerUp={endClipPointer}/></div>)}{audioClips.length===0&&<span className="lane-hint">Import music or voiceover</span>}</div></div>
           <div className="track-row"><div className="track-label"><b>TEXT</b><button onClick={addText}><Plus/></button></div><div className="track-lane text-lane">{showCaption?<div className="timeline-clip text-clip" style={{left:0,width:Math.max(100,mainDuration*pxPerSec)}} onClick={e=>{e.stopPropagation();setActiveTool("Text");}}><Type/><b>{caption}</b></div>:<span className="lane-hint">Add titles and captions</span>}</div></div>
-          <div className="playhead-line" style={{left:playhead*pxPerSec}}><i/></div>
+          <div className="playhead-line" style={{left:playhead*pxPerSec-7}} onPointerDown={beginPlayheadDrag} onPointerMove={movePlayheadDrag} onPointerUp={endPlayheadDrag} onPointerCancel={endPlayheadDrag}><i/><span/></div>
         </div>
       </div>
     </section>
