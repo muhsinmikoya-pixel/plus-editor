@@ -230,3 +230,10 @@
 .color-tools input[type=range]{width:100%}
 .audio-library{max-height:115px;overflow:auto}
 .audio-library button{flex:0 0 auto}
+
+
+/* CapCut-inspired continuous per-second video filmstrip in the primary timeline */
+.clip-filmstrip{position:absolute;inset:0;display:flex;overflow:hidden;background:#25272c;pointer-events:none}
+.clip-filmstrip .film-frame{position:relative!important;inset:auto!important;display:block;flex:1 1 0;width:0!important;min-width:0;height:100%!important;object-fit:cover;opacity:1!important;border-right:1px solid #1115}
+.timeline-clip .clip-visual{position:relative;overflow:hidden;border-radius:3px}
+.timeline-clip .clip-visual>b{z-index:2}
