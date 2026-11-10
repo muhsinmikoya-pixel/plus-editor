@@ -255,3 +255,31 @@
 .sticker-overlay{position:absolute;z-index:5;left:50%;transform:translate(-50%,-50%);line-height:1;filter:drop-shadow(0 3px 4px #0009);pointer-events:none}
 .sticker-top{top:17%}.sticker-center{top:50%}.sticker-bottom{top:78%}
 @media(max-width:430px){.sticker-tools{max-height:160px}.preset-grid button{font-size:8px}}
+
+
+/* Clip transition previews */
+.preview-media{animation-duration:.45s;animation-timing-function:cubic-bezier(.2,.75,.25,1);animation-fill-mode:both}
+.transition-fade{animation-name:plusTransitionFade}
+.transition-zoom{animation-name:plusTransitionZoom}
+.transition-slide,.transition-push{animation-name:plusTransitionSlide}
+.transition-wipe{animation-name:plusTransitionWipe}
+.transition-blur,.transition-zoomblur{animation-name:plusTransitionBlur}
+.transition-flash,.transition-flicker{animation-name:plusTransitionFlash}
+.transition-glitch{animation-name:plusTransitionGlitch}
+.transition-spin{animation-name:plusTransitionSpin}
+.transition-bounce{animation-name:plusTransitionBounce}
+.transition-flip{animation-name:plusTransitionFlip}
+.transition-fadeblack{animation-name:plusTransitionBlack}
+.transition-whip{animation-name:plusTransitionWhip}
+@keyframes plusTransitionFade{from{opacity:0}to{opacity:1}}
+@keyframes plusTransitionZoom{from{opacity:.2;transform:translate(-50%,-50%) scale(1.18)}to{opacity:1}}
+@keyframes plusTransitionSlide{from{opacity:.2;transform:translate(calc(-50% + 80px),-50%)}to{opacity:1}}
+@keyframes plusTransitionWipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes plusTransitionBlur{from{opacity:.2;filter:blur(16px)}to{opacity:1;filter:blur(0)}}
+@keyframes plusTransitionFlash{0%{opacity:0}35%{opacity:1;filter:brightness(2)}100%{opacity:1;filter:none}}
+@keyframes plusTransitionGlitch{0%{opacity:0;filter:hue-rotate(90deg) saturate(3);transform:translate(-48%,-50%)}35%{transform:translate(-52%,-50%)}100%{opacity:1;filter:none}}
+@keyframes plusTransitionSpin{from{opacity:0;transform:translate(-50%,-50%) rotate(-25deg) scale(.75)}to{opacity:1}}
+@keyframes plusTransitionBounce{0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}65%{transform:translate(-50%,-50%) scale(1.08)}100%{opacity:1}}
+@keyframes plusTransitionFlip{from{opacity:0;transform:translate(-50%,-50%) rotateY(85deg)}to{opacity:1}}
+@keyframes plusTransitionBlack{0%{opacity:0}100%{opacity:1}}
+@keyframes plusTransitionWhip{from{opacity:0;filter:blur(18px);transform:translate(calc(-50% + 120px),-50%)}to{opacity:1;filter:none}}
