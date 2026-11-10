@@ -1,154 +1,245 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, AudioLines, Captions, Check, ChevronDown, Clapperboard, Crop, Download, Film, FolderOpen, Gauge, ImagePlus, Layers, Music2, Play, Plus, Scissors, Settings2, Sparkles, Square, Type, Undo2, Volume2, WandSparkles, X } from "lucide-react";
+import {
+  ArrowLeft, AudioLines, Captions, ChevronDown, ChevronRight, CircleUserRound,
+  Clapperboard, Crop, Download, Film, Folder, FolderOpen, Image, ImagePlus,
+  Layers, Mic, Music2, Pause, Play, Plus, Search, Scissors, Settings2,
+  Sparkles, Square, Type, Undo2, Volume2, WandSparkles, X, Zap
+} from "lucide-react";
 import "./style.css";
 
+const formatTime = (seconds = 0) => {
+  if (!Number.isFinite(seconds)) return "00:00";
+  const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
+  return mins + ":" + secs;
+};
+
 function App() {
+  const [screen, setScreen] = useState("home");
   const [files, setFiles] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [galleryTab, setGalleryTab] = useState("Videos");
   const [playing, setPlaying] = useState(false);
   const [caption, setCaption] = useState("Your next big edit starts here.");
   const [showCaption, setShowCaption] = useState(false);
-  const [activeTool, setActiveTool] = useState("Media");
-  const [zoom, setZoom] = useState(100);
+  const [activeTool, setActiveTool] = useState("Edit");
   const [volume, setVolume] = useState(100);
   const [status, setStatus] = useState("Ready to create");
   const [duration, setDuration] = useState(0);
-  const videoRef = useRef(null);
+  const [playhead, setPlayhead] = useState(0);
+  const [projectName, setProjectName] = useState("Untitled project");
+  const [projectCount, setProjectCount] = useState(0);
   const inputRef = useRef(null);
-  const galleryRef = useRef(null);
-  const selectedFile = files.find(f => f.id === selected);
-  const mediaFiles = useMemo(() => files.filter(f => f.kind === "video" || f.kind === "image"), [files]);
+  const videoRef = useRef(null);
+  const selectedFile = files.find(file => file.id === selected) || files[0] || null;
+  const videoFiles = useMemo(() => files.filter(file => file.kind === "video"), [files]);
+  const audioFiles = useMemo(() => files.filter(file => file.kind === "audio"), [files]);
+  const visibleGalleryFiles = useMemo(
+    () => files.filter(file => galleryTab === "Videos" ? file.kind === "video" : file.kind === "image"),
+    [files, galleryTab]
+  );
 
   useEffect(() => {
-    return () => files.forEach(f => URL.revokeObjectURL(f.url));
+    return () => files.forEach(file => URL.revokeObjectURL(file.url));
   }, []);
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.volume = volume / 100;
   }, [volume, selected]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const update = () => setPlayhead(video.currentTime || 0);
+    video.addEventListener("timeupdate", update);
+    return () => video.removeEventListener("timeupdate", update);
+  }, [selected, screen]);
+
+  function chooseMedia(kind = "all") {
+    if (inputRef.current) {
+      inputRef.current.accept = kind === "audio" ? "audio/*" : kind === "photo" ? "image/*" : kind === "video" ? "video/*" : "video/*,image/*,audio/*";
+      inputRef.current.click();
+    }
+  }
+
   function importFiles(list) {
-    const added = Array.from(list || []).map((file, i) => ({
-      id: crypto.randomUUID(), name: file.name, file, url: URL.createObjectURL(file),
+    const added = Array.from(list || []).map(file => ({
+      id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random())),
+      name: file.name,
+      file,
+      url: URL.createObjectURL(file),
       kind: file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "image",
       duration: 0
     }));
-    setFiles(prev => [...prev, ...added]);
-    if (added.length) { setSelected(added[0].id); setStatus(`${added.length} file(s) imported`); }
+    if (!added.length) return;
+    setFiles(previous => [...previous, ...added]);
+    setSelected(added.find(file => file.kind === "video")?.id || added[0].id);
+    setGalleryTab(added.some(file => file.kind === "video") ? "Videos" : "Photos");
+    setStatus(added.length + " item(s) added to your project");
+    setProjectCount(count => count + 1);
+    setScreen("editor");
   }
 
-  function addToTimeline(file) {
-    if (!files.some(f => f.id === file.id)) setFiles(prev => [...prev, file]);
-    setSelected(file.id);
-    setStatus(`${file.name} selected`);
-  }
-
-  function removeSelected() {
-    if (!selectedFile) return;
-    URL.revokeObjectURL(selectedFile.url);
-    setFiles(prev => prev.filter(f => f.id !== selected));
+  function startNewVideo() {
+    setFiles([]);
     setSelected(null);
-    setStatus("Clip removed");
+    setProjectName("Untitled project");
+    setGalleryTab("Videos");
+    setScreen("gallery");
   }
 
-  function splitSelected() {
-    if (!selectedFile) return;
-    setStatus("Split point set at the playhead — detailed multi-clip splitting is coming next.");
+  function addMore() {
+    chooseMedia("all");
+  }
+
+  function removeFile(id) {
+    const target = files.find(file => file.id === id);
+    if (target) URL.revokeObjectURL(target.url);
+    const remaining = files.filter(file => file.id !== id);
+    setFiles(remaining);
+    if (selected === id) setSelected(remaining[0]?.id || null);
+    setStatus("Media removed");
   }
 
   function exportCurrent() {
-    const v = videoRef.current;
-    if (!v || selectedFile?.kind !== "video") {
-      setStatus("Choose a video clip first to preview and export it.");
+    const video = videoRef.current;
+    if (!video || selectedFile?.kind !== "video") {
+      setStatus("Select a video clip before exporting.");
+      return;
+    }
+    if (!video.captureStream || !window.MediaRecorder) {
+      setStatus("Video export is not supported by this browser yet.");
       return;
     }
     try {
-      const stream = v.captureStream();
-      const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+      const stream = video.captureStream();
+      const recorder = new MediaRecorder(stream);
       const chunks = [];
-      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
       recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: "video/webm" });
+        const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "plus-editor-export.webm"; a.click();
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "plus-editor-export.webm";
+        link.click();
         URL.revokeObjectURL(url);
-        setStatus("Video export downloaded");
+        setStatus("Export downloaded");
       };
-      v.currentTime = 0; v.play();
+      video.currentTime = 0;
+      video.play();
       recorder.start();
-      v.onended = () => { recorder.stop(); v.pause(); setPlaying(false); };
-      setStatus("Recording video playback for WebM export…");
+      video.onended = () => { if (recorder.state !== "inactive") recorder.stop(); video.pause(); setPlaying(false); };
+      setStatus("Exporting video playback…");
     } catch {
-      setStatus("This browser does not support video capture export.");
+      setStatus("Could not start export in this browser.");
     }
   }
 
-  const tools = [
-    ["Media", FolderOpen], ["Audio", Music2], ["Text", Type], ["Captions", Captions],
-    ["Effects", WandSparkles], ["Adjust", Gauge]
+  function splitClip() {
+    setStatus("Split editing is being built next. Your original media is unchanged.");
+  }
+
+  const homeTools = [
+    [AudioLines, "AutoCut", "Create a quick edit"],
+    [Sparkles, "Retouch", "Photo touch-ups"],
+    [WandSparkles, "AI generator", "AI creative tools"],
+    [Image, "Photo tools", "Crop and adjust"],
+    [Mic, "Record", "Record a voiceover"],
+    [Zap, "Auto enhance", "Improve your footage"],
+    [AudioLines, "Audio tools", "Music and sound"],
+    [Captions, "Auto captions", "Speech to captions"],
+    [CircleUserRound, "Remove background", "Cut out a subject"]
   ];
 
-  return <div className="app-shell">
-    <header className="topbar">
-      <a className="brand" href="#" aria-label="Plus Editor home">
-        <span className="brand-mark"><span></span><i></i><em></em></span>
-        <span className="brand-name"><b>PLUS</b><small>EDITOR</small></span>
-      </a>
-      <div className="project-name"><span className="live-dot"></span> Untitled project <ChevronDown size={14}/></div>
-      <div className="top-actions"><button className="icon-btn" title="Undo"><Undo2 size={17}/></button><button className="icon-btn" title="Settings"><Settings2 size={17}/></button><button className="export-btn" onClick={exportCurrent}><Download size={15}/> Export</button></div>
-    </header>
+  const editorTools = [
+    [Scissors, "Edit"], [Music2, "Audio"], [Type, "Text"],
+    [Sparkles, "Effects"], [Layers, "Overlay"], [Captions, "Captions"]
+  ];
 
-    <main className="workspace">
-      <aside className="left-panel">
-        <nav className="tool-rail">{tools.map(([name, Icon]) => <button key={name} className={activeTool === name ? "rail-item active" : "rail-item"} onClick={() => setActiveTool(name)}><Icon size={19}/><span>{name}</span></button>)}</nav>
-        <section className="asset-panel">
-          <div className="panel-heading"><div><span className="eyebrow">WORKSPACE</span><h2>{activeTool}</h2></div><button className="icon-btn small" onClick={() => inputRef.current?.click()}><Plus size={17}/></button></div>
-          {activeTool === "Media" && <>
-            <button className="import-card" onClick={() => galleryRef.current?.click()}><ImagePlus size={23}/><b>Choose from gallery</b><span>Pick videos or photos from your phone</span></button>
-            <input ref={galleryRef} type="file" accept="video/*,image/*" multiple hidden onChange={e => importFiles(e.target.files)}/>
-            <button className="audio-import" onClick={() => inputRef.current?.click()}><AudioLines size={15}/> Import audio files</button>
-            <input ref={inputRef} type="file" accept="video/*,image/*,audio/*" multiple hidden onChange={e => importFiles(e.target.files)}/>
-            <div className="asset-list">{files.map(f => <button key={f.id} className={selected === f.id ? "asset active" : "asset"} onClick={() => addToTimeline(f)}><span className="asset-thumb">{f.kind === "video" ? <Film size={17}/> : f.kind === "audio" ? <AudioLines size={17}/> : <ImagePlus size={17}/>}</span><span className="asset-info"><b>{f.name}</b><small>{f.kind.toUpperCase()}</small></span><Plus size={15}/></button>)}</div>
-            {!files.length && <p className="empty-note">Your imported files will appear here.</p>}
-          </>}
-          {activeTool === "Text" && <div className="tool-content"><label>Text content</label><textarea value={caption} onChange={e => setCaption(e.target.value)}/><button className="wide-btn" onClick={() => {setShowCaption(true);setStatus("Text overlay added to preview");}}>Add text overlay</button><p className="hint">Text overlay appears in the preview. Timeline-based text editing is being developed.</p></div>}
-          {activeTool === "Captions" && <div className="tool-content"><div className="feature-tile"><Captions/><b>Caption studio</b><small>Style and prepare captions</small></div><button className="wide-btn" onClick={() => {setShowCaption(true);setStatus("Caption overlay enabled");}}>Add caption</button><p className="hint">Automatic speech recognition and word-by-word caption timing are not enabled yet.</p></div>}
-          {activeTool === "Audio" && <div className="tool-content"><div className="feature-tile"><AudioLines/><b>Audio controls</b><small>Adjust selected video volume</small></div><label>Clip volume · {volume}%</label><input type="range" min="0" max="100" value={volume} onChange={e => setVolume(+e.target.value)}/></div>}
-          {activeTool === "Effects" && <div className="tool-content"><div className="feature-tile"><Sparkles/><b>Effects library</b><small>Visual effects are planned for the next build</small></div><p className="hint">The effect controls will be added with real preview and export rendering—not decorative buttons.</p></div>}
-          {activeTool === "Adjust" && <div className="tool-content"><div className="feature-tile"><Gauge/><b>Preview settings</b><small>Workspace display scale</small></div><label>Preview scale · {zoom}%</label><input type="range" min="50" max="150" value={zoom} onChange={e => setZoom(+e.target.value)}/></div>}
-        </section>
-      </aside>
-
-      <section className="center-panel">
-        <div className="preview-toolbar"><span>PREVIEW</span><span className="preview-size">Fit <ChevronDown size={13}/></span></div>
-        <div className="preview-stage"><div className="preview-frame" style={{transform:`scale(${zoom/100})`}}>
-          {selectedFile?.kind === "video" ? <video ref={videoRef} key={selectedFile.id} src={selectedFile.url} controls={false} onLoadedMetadata={e => setDuration(e.target.duration || 0)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} /> :
-           selectedFile?.kind === "image" ? <img src={selectedFile.url} alt="Selected media"/> :
-           <div className="welcome-preview"><div className="large-mark"><span></span><i></i><em></em></div><b>Make something<br/>worth watching.</b><small>Import a video to begin editing.</small></div>}
-          {showCaption && <div className="caption-overlay">{caption}</div>}
-        </div></div>
-        <div className="playback-bar"><button className="play-button" onClick={() => {if(videoRef.current){if(videoRef.current.paused) videoRef.current.play(); else videoRef.current.pause();}}}>{playing ? <Square size={15}/> : <Play size={16} fill="currentColor"/>}</button><span className="timecode">00:00:00</span><div className="playback-line"></div><span className="timecode">{duration ? new Date(duration*1000).toISOString().slice(11,19) : "00:00:00"}</span></div>
+  if (screen === "home") {
+    return <div className="mobile-app home-screen">
+      <input ref={inputRef} type="file" accept="video/*,image/*,audio/*" multiple hidden onChange={event => importFiles(event.target.files)} />
+      <section className="home-hero">
+        <div className="home-top"><div className="trial-pill"><span className="diamond">◆</span> PLUS EDITOR · FREE TO CREATE</div><button className="round-search" aria-label="Search"><Search size={23}/></button></div>
+        <div className="hero-copy"><span>VIDEO CREATE</span><h1>Get started <ChevronRight size={28}/></h1></div>
+        <div className="create-cards">
+          <button className="create-card new-video" onClick={startNewVideo}><span className="create-icon"><Plus size={30}/></span><b>New video</b><small>Start editing your clips</small></button>
+          <button className="create-card edit-photo" onClick={() => {setScreen("gallery");setGalleryTab("Photos");}}><span className="create-icon"><Image size={27}/></span><b>Edit photo</b><small>Make a photo look better</small></button>
+        </div>
       </section>
+      <section className="home-content">
+        <div className="recent-heading"><b>Recent projects</b><button onClick={() => setScreen("library")}>See all <ChevronRight size={15}/></button></div>
+        {projectCount > 0 ? <div className="recent-empty"><Film size={24}/><span>Your new project is ready in the editor.</span><button onClick={() => setScreen("editor")}>Continue editing</button></div> : <div className="recent-strip"><div className="recent-placeholder"><Clapperboard/><span>Your projects will appear here</span></div><div className="recent-next"><ChevronRight/></div></div>}
+        <div className="home-tools">{homeTools.map(([Icon, label, desc]) => <button key={label} className="home-tool" onClick={() => {if(label === "Audio tools") {startNewVideo();setActiveTool("Audio");} else if(label === "Auto captions") {startNewVideo();setActiveTool("Captions");} else if(label === "Photo tools" || label === "Edit photo") {setGalleryTab("Photos");setScreen("gallery");} else {setStatus(label + " is on the feature roadmap");setScreen("feature");}}}><Icon size={28}/><b>{label}</b></button>)}</div>
+      </section>
+      <nav className="home-nav"><button className="active"><Scissors/>Edit</button><button onClick={() => setScreen("feature")}><Layers/>Templates</button><button onClick={() => setScreen("feature")}><Sparkles/>AI Lab</button><button onClick={() => setScreen("library")}><Folder/>Library</button><button onClick={() => setScreen("feature")}><CircleUserRound/>Me</button></nav>
+    </div>;
+  }
 
-      <aside className="inspector">
-        <div className="panel-heading"><div><span className="eyebrow">PROPERTIES</span><h2>Inspector</h2></div><Settings2 size={17}/></div>
-        {selectedFile ? <><div className="selected-file"><span className="file-icon"><Film size={19}/></span><div><b>{selectedFile.name}</b><small>{selectedFile.kind} clip</small></div></div><div className="property-group"><label>Volume</label><div className="range-row"><Volume2 size={15}/><input type="range" min="0" max="100" value={volume} onChange={e => setVolume(+e.target.value)}/><span>{volume}%</span></div></div><div className="property-group"><label>Clip actions</label><button className="action-row" onClick={splitSelected}><Scissors size={16}/> Split at playhead</button><button className="action-row danger" onClick={removeSelected}><X size={16}/> Remove clip</button></div></> : <div className="inspector-empty"><Layers size={24}/><b>Nothing selected</b><span>Select a clip to see its settings.</span></div>}
-      </aside>
-    </main>
+  if (screen === "gallery") {
+    return <div className="mobile-app gallery-screen">
+      <input ref={inputRef} type="file" accept="video/*,image/*,audio/*" multiple hidden onChange={event => importFiles(event.target.files)} />
+      <header className="gallery-header"><button onClick={() => setScreen("home")} aria-label="Close"><X/></button><b>Albums <ChevronDown size={18}/></b><span>Generated</span><span>Spaces <ChevronDown size={16}/></span><span>Library</span></header>
+      <div className="gallery-tabs"><button className={galleryTab === "Videos" ? "active" : ""} onClick={() => setGalleryTab("Videos")}>Videos</button><button className={galleryTab === "Photos" ? "active" : ""} onClick={() => setGalleryTab("Photos")}>Photos</button></div>
+      {files.length === 0 ? <div className="gallery-empty"><div className="gallery-empty-icon"><ImagePlus size={34}/></div><h2>Choose media from your phone</h2><p>PLUS EDITOR can import videos and photos you select from your Android gallery.</p><button className="cyan-button" onClick={() => chooseMedia(galleryTab === "Photos" ? "photo" : "video")}>Open phone gallery</button><button className="browse-all" onClick={() => chooseMedia("all")}>Browse photos, videos and audio</button></div> :
+        <><div className="gallery-grid">{visibleGalleryFiles.map(file => <button key={file.id} className={selected === file.id ? "gallery-thumb selected" : "gallery-thumb"} onClick={() => setSelected(file.id)}>{file.kind === "video" ? <video src={file.url} muted preload="metadata"/> : <img src={file.url} alt={file.name}/>}<span className="select-circle">{selected === file.id ? "✓" : ""}</span>{file.kind === "video" && <small>{formatTime(file.duration)}</small>}</button>)}</div><div className="gallery-footer"><span>{files.length} selected/imported</span><button className="cyan-button" onClick={() => setScreen("editor")}>Add to project</button></div></>}
+      <button className="gallery-add-more" onClick={() => chooseMedia(galleryTab === "Photos" ? "photo" : "video")}><Plus size={17}/> Add more from phone</button>
+    </div>;
+  }
 
-    <section className="timeline-panel">
-      <div className="timeline-header"><div><span className="eyebrow">SEQUENCE</span><b>Timeline</b></div><div className="timeline-controls"><button className="icon-btn small" onClick={() => setZoom(Math.max(50, zoom-10))}>−</button><span>{zoom}%</span><button className="icon-btn small" onClick={() => setZoom(Math.min(150, zoom+10))}>+</button></div></div>
-      <div className="timeline-body"><div className="track-labels"><div><Film size={15}/> Video 1</div><div><AudioLines size={15}/> Audio 1</div><div><Type size={15}/> Text</div></div><div className="tracks">
-        <div className="ruler"><span>00:00</span><span>00:05</span><span>00:10</span><span>00:15</span><span>00:20</span></div>
-        <div className="track">{mediaFiles.map(f => <button key={f.id} className={selected === f.id ? "timeline-clip active" : "timeline-clip"} onClick={() => setSelected(f.id)}><span>{f.kind === "video" ? <Film size={13}/> : <ImagePlus size={13}/>}</span>{f.name}</button>)}</div>
-        <div className="track audio-track">{files.filter(f => f.kind === "audio").map(f => <button key={f.id} className="timeline-clip audio-clip" onClick={() => setSelected(f.id)}><AudioLines size={13}/>{f.name}</button>)}</div>
-        <div className="track text-track">{showCaption && <button className="timeline-clip text-clip" onClick={() => setActiveTool("Text")}><Type size={13}/>Text overlay</button>}</div>
-      </div></div>
-      <div className="statusbar"><span><span className="live-dot"></span>{status}</span><span>PLUS EDITOR · BETA</span></div>
+  if (screen === "feature") {
+    return <div className="mobile-app feature-screen"><header><button onClick={() => setScreen("home")}><ArrowLeft/></button><b>PLUS EDITOR</b></header><div className="feature-coming"><Sparkles size={38}/><h1>More creative tools are coming.</h1><p>We're building the editing tools step by step. Start with a video project to use the editor that's available now.</p><button className="cyan-button" onClick={startNewVideo}>Create a video</button></div></div>;
+  }
+
+  if (screen === "library") {
+    return <div className="mobile-app feature-screen"><header><button onClick={() => setScreen("home")}><ArrowLeft/></button><b>Project library</b></header><div className="feature-coming"><Folder size={38}/><h1>Your projects</h1><p>Projects you create in this browser will be shown here as project saving is added.</p><button className="cyan-button" onClick={startNewVideo}>New video</button></div></div>;
+  }
+
+  return <div className="mobile-app editor-screen">
+    <input ref={inputRef} type="file" accept="video/*,image/*,audio/*" multiple hidden onChange={event => importFiles(event.target.files)} />
+    <header className="editor-header">
+      <button onClick={() => setScreen("home")} aria-label="Back"><X size={25}/></button>
+      <button className="project-title" onClick={() => {const name=window.prompt("Project name",projectName);if(name)setProjectName(name);}}>{projectName} <ChevronDown size={15}/></button>
+      <button className="premium-icon" title="PLUS tools"><span>◆</span></button>
+      <button className="quality-button">1080P <ChevronDown size={13}/></button>
+      <button className="editor-export" onClick={exportCurrent}><Download size={16}/> Export</button>
+    </header>
+    <section className="editor-preview">
+      <div className="preview-canvas">
+        {selectedFile?.kind === "video" ? <video ref={videoRef} key={selectedFile.id} src={selectedFile.url} controls={false} onLoadedMetadata={event => {setDuration(event.target.duration || 0);const file=files.find(item=>item.id===selectedFile.id);if(file)file.duration=event.target.duration || 0;}} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}/> :
+          selectedFile?.kind === "image" ? <img src={selectedFile.url} alt={selectedFile.name}/> :
+          <div className="preview-placeholder"><Film size={36}/><b>Import a video to start</b><span>Your preview will appear here</span></div>}
+        {showCaption && <div className="caption-overlay">{caption}</div>}
+      </div>
     </section>
-    <footer className="mobile-footer"><button onClick={() => galleryRef.current?.click()}><FolderOpen/>Gallery</button><button onClick={() => setActiveTool("Text")}><Type/>Text</button><button onClick={() => setActiveTool("Audio")}><Music2/>Audio</button><button onClick={exportCurrent}><Download/>Export</button></footer>
+    <div className="player-controls">
+      <button aria-label="Fullscreen"><Crop size={20}/></button>
+      <button className="play-main" onClick={() => {if(videoRef.current){if(videoRef.current.paused)videoRef.current.play();else videoRef.current.pause();}}}>{playing ? <Pause size={23}/> : <Play size={23}/>}</button>
+      <button aria-label="Undo"><Undo2 size={21}/></button><button aria-label="Redo"><Undo2 className="redo-icon" size={21}/></button>
+    </div>
+    <section className="timeline-area">
+      <div className="timeline-time"><b>{formatTime(playhead)} / {formatTime(duration)}</b><span>{formatTime(playhead)}　 •　 {formatTime(playhead+2)}　 •　 {formatTime(playhead+4)}</span></div>
+      <div className="timeline-scroll">
+        <div className="track-tools"><button onClick={() => setVolume(volume===0?100:0)}><Volume2/><small>Mute clip</small></button><button onClick={() => chooseMedia("audio")}><Music2/><small>Add audio</small></button><button onClick={() => {setShowCaption(true);setActiveTool("Text");}}><Type/><small>Add text</small></button></div>
+        <div className="track-stack">
+          <div className="timeline-track video-track">{files.filter(file=>file.kind!=="audio").map(file=><button key={file.id} className={selected===file.id?"clip-tile chosen":"clip-tile"} onClick={()=>setSelected(file.id)}>{file.kind==="video"?<video src={file.url} muted preload="metadata"/>:<img src={file.url} alt=""/>}<span>{file.name}</span></button>)}<button className="add-clip" onClick={addMore}><Plus/></button></div>
+          <div className="timeline-track audio-track">{audioFiles.map(file=><button key={file.id} className="audio-tile" onClick={()=>setSelected(file.id)}><AudioLines/>{file.name}</button>)}<button className="track-add" onClick={()=>chooseMedia("audio")}>＋ Add audio</button></div>
+          <div className="timeline-track text-track">{showCaption&&<button className="text-tile" onClick={()=>setActiveTool("Text")}><Type/> Text overlay</button>}<button className="track-add" onClick={()=>{setShowCaption(true);setActiveTool("Text");}}>＋ Add text</button></div>
+        </div>
+        <div className="playhead"></div>
+      </div>
+    </section>
+    <section className="tool-drawer">
+      {activeTool==="Text" ? <div className="tool-detail"><label>Text overlay</label><input value={caption} onChange={event=>setCaption(event.target.value)}/><button onClick={()=>setShowCaption(true)}>Apply</button></div> :
+       activeTool==="Audio" ? <div className="tool-detail"><label>Clip volume · {volume}%</label><input type="range" min="0" max="100" value={volume} onChange={event=>setVolume(+event.target.value)}/><button onClick={()=>chooseMedia("audio")}>Import audio</button></div> :
+       activeTool==="Captions" ? <div className="tool-detail"><label>Captions</label><p>Automatic speech-to-text captions will be added in a later update.</p></div> :
+       activeTool==="Effects" ? <div className="tool-detail"><label>Effects</label><p>Video effects and transitions are on the build roadmap.</p></div> :
+       <div className="tool-detail"><label>{status}</label><button onClick={splitClip}>Split at playhead</button><button onClick={addMore}>Add media</button></div>}
+      <nav className="editor-toolbar">{editorTools.map(([Icon,label])=><button key={label} className={activeTool===label?"active":""} onClick={()=>setActiveTool(label)}><Icon size={22}/><span>{label}</span></button>)}</nav>
+    </section>
+    <div className="editor-status">{status}</div>
   </div>;
 }
 
