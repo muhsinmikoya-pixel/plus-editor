@@ -5,3 +5,17 @@
 .feature-screen{background:#101114}.feature-screen header{height:55px;display:flex;align-items:center;gap:15px;padding:0 15px;border-bottom:1px solid #292b30}.feature-screen header button{border:0;background:none;color:white}.feature-coming{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px}.feature-coming svg{color:#16c5da}.feature-coming h1{font:600 22px 'Space Grotesk'}.feature-coming p{max-width:300px;color:#a2a6ae;font-size:12px;line-height:1.7;margin-bottom:20px}
 @media(min-width:760px){.mobile-app{max-width:480px;margin:0 auto;box-shadow:0 0 0 1px #27292d}.home-nav{left:50%;right:auto;transform:translateX(-50%);width:min(480px,100%)}}
 @media(max-height:700px){.home-hero .hero-copy{margin-top:30px}.create-card{height:112px}.home-tools{gap:14px 5px;margin-top:20px}.timeline-area{height:205px}.timeline-scroll{height:160px}}
+
+/* Direct manipulation: drag media on the preview, then refine its transform */
+.preview-canvas{touch-action:none;cursor:grab;user-select:none}
+.preview-canvas.is-dragging{cursor:grabbing}
+.preview-canvas .transform-media{position:absolute;left:50%;top:50%;width:82%;height:82%;object-fit:contain;max-width:none;max-height:none;transform-origin:center center;touch-action:none;pointer-events:none}
+.canvas-hud{position:absolute;top:8px;left:50%;transform:translateX(-50%);padding:5px 9px;border-radius:20px;background:#08090bb8;border:1px solid #ffffff24;color:#e7e9ed;font-size:8px;font-weight:700;letter-spacing:.08em;white-space:nowrap;pointer-events:none}
+.transform-controls{display:flex;flex-direction:column;align-items:stretch;gap:7px;padding:9px 12px}
+.transform-row{display:grid;grid-template-columns:48px 1fr 42px;gap:9px;align-items:center;font-size:10px}
+.transform-row label{color:#d8dae0;font-weight:700}
+.transform-row input{width:100%;accent-color:#13c5dc}
+.transform-row b{text-align:right;color:#aeb4be;font-size:10px}
+.transform-actions{display:flex;gap:6px;overflow-x:auto}
+.transform-actions button{white-space:nowrap;display:flex;align-items:center;gap:4px;background:#292c32;border:1px solid #383b42;border-radius:8px;padding:7px 9px;color:#f2f3f5;font-size:9px}
+.editor-screen .tool-drawer .tool-detail.transform-controls{min-height:104px}
