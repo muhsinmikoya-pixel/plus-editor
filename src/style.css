@@ -118,3 +118,38 @@
 .editor-toolbar button.active svg{stroke-width:2.7}
 .editor-status{height:20px;color:#a7abb2;font-size:9px;background:#111214}
 @media(max-height:740px){.timeline-area{height:220px}.timeline-scroll{height:172px}.editor-preview{min-height:95px}.tool-detail.transform-controls{max-height:112px}}
+
+
+/* Functional timeline layout: stacked tracks inside a horizontally scrollable canvas */
+.timeline-scroll{display:block!important;position:relative;overflow:auto!important;touch-action:pan-x pan-y;overscroll-behavior:contain}
+.timeline-content{position:relative;min-height:150px;display:block;flex:none}
+.timeline-ruler{position:relative;height:24px;min-width:100%;border-bottom:1px solid #41434a;box-sizing:border-box}
+.track-row{display:block;position:relative;width:100%;min-width:100%}
+.track-label{height:21px;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#202126;border-bottom:1px solid #303238}
+.track-lane{height:49px;width:100%;min-width:100%;box-sizing:border-box;position:relative;display:block;overflow:visible;border-bottom:1px solid #303238}
+.audio-lane{background:#1b201f}
+.text-lane{background:#1e1b22}
+.timeline-clip{position:absolute;top:4px;height:40px;box-sizing:border-box;min-width:42px;touch-action:none;user-select:none;cursor:grab;z-index:2}
+.timeline-clip:active{cursor:grabbing}
+.timeline-clip .clip-visual{height:100%;pointer-events:none}
+.timeline-clip.selected{z-index:3}
+.trim-handle{position:absolute;top:0;bottom:0;width:10px;z-index:5;border:0;background:#f1f1ef;padding:0;opacity:.9;touch-action:none;cursor:ew-resize}
+.trim-handle.left{left:0;border-radius:4px 0 0 4px}
+.trim-handle.right{right:0;border-radius:0 4px 4px 0}
+.audio-clip{display:flex;align-items:center;gap:5px;padding:0 12px;background:#263b34;border-color:#557e6e}
+.audio-clip>svg,.audio-clip>b{pointer-events:none}
+.text-clip{display:flex;align-items:center;gap:7px;padding:0 8px;background:#37313e;border-color:#6c6179}
+.playhead-line{position:absolute;top:0;bottom:0;width:2px;background:#f7f7f5;z-index:8;pointer-events:none}
+.playhead-line i{position:absolute;top:0;left:-4px;width:10px;height:10px;background:#f7f7f5;clip-path:polygon(0 0,100% 0,50% 100%)}
+.history-button{width:27px;height:32px;border:0;background:transparent;color:#f1f1ef;display:grid;place-items:center}
+.history-button:disabled,.player-controls button:disabled{opacity:.28}
+.editor-export:disabled{opacity:.55}
+.crop-controls{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px 12px}
+.crop-row{display:grid;grid-template-columns:42px 1fr 32px;gap:6px;align-items:center;font-size:10px}
+.crop-row label{color:#d8dae0;font-weight:700}
+.crop-row input{width:100%;accent-color:#f3f3f1}
+.crop-row b{text-align:right;color:#aeb4be;font-size:10px}
+.preview-canvas{touch-action:none;user-select:none}
+.preview-canvas video,.preview-canvas img{pointer-events:none}
+.timeline-actions input{touch-action:pan-x}
+@media(max-height:740px){.timeline-area{height:225px}.timeline-scroll{height:178px}.tool-detail.crop-controls{max-height:122px;overflow:auto}}
